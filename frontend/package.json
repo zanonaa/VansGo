@@ -24,7 +24,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.10.1",
     "dompurify": "^3.2.7",
-    "marked": "^18.0.1",
+    "marked": "^18.1.2",
     "material-symbols": "^0.44.6",
     "monaco-editor": "^0.55.1",
     "playwright-core": "^1.60.0",
