@@ -1,0 +1,15 @@
+{
+  "name": "vansgo",
+  "version": "2.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev": "pnpm --dir frontend dev",
+    "build": "pnpm --dir frontend build",
+    "test": "pnpm --dir frontend test",
+    "test:watch": "pnpm --dir frontend test:watch",
+    "lint": "pnpm --dir frontend lint",
+    "lint:undef": "pnpm --dir frontend lint:undef",
+    "lint:reacthooks": "pnpm --dir frontend lint:reacthooks"
+  }
+}
