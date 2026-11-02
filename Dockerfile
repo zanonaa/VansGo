@@ -41,7 +41,7 @@ RUN if [ "$APP_VERSION" != "unknown" ]; then printf '%s\n' "$APP_VERSION" > inte
   && CGO_ENABLED=0 GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/vansgo ./cmd/api
 
 # Download official release artifacts on the builder host; no Rust compilation.
-FROM --platform=$BUILDPLATFORM alpine:3.22@sha256:d406446bc05b82480756ce8f1287964d28768c23955fa9480d2a74a2eae7a654 AS rtk-builder
+FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS rtk-builder
 ARG TARGETARCH
 RUN apk add --no-cache curl
 WORKDIR /out
