@@ -1,0 +1,59 @@
+# VansGo Docker Compose
+# Usage:
+#   1. cp .env.example .env && nano .env
+#   2. docker compose up -d
+#   3. Open http://localhost:20128/masuk
+
+services:
+  vansgo:
+    # Full image reference: Dev ARM64 by default; use vansgo:go-local for a local build.
+    image: ${VANSGO_IMAGE:-ghcr.io/zanonaa/vansgo:dev-go-arm64}
+    container_name: vansgo
+    restart: unless-stopped
+    ports:
+      # Local-only by default; expose through an HTTPS reverse proxy if needed.
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-20128}:20128"
+    volumes:
+      - vansgo-data:/app/data
+      # Compatibility source for pre-v0.91.22 named-volume installs of the
+      # former VansRouter project. Bind-mount users must keep their existing
+      # host path or migrate it first. The Go startup migration imports legacy
+      # data without discarding the source.
+      - vansrouter-data:/migration-data:ro
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /app/data
+      PORT: "20128"
+      HOSTNAME: "0.0.0.0"
+      NODE_ENV: production
+      HEADROOM_URL: http://headroom:8787
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:20128/api/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  headroom:
+    profiles: [headroom]
+    image: vansgo-headroom:0.41.0
+    build:
+      context: ./docker/token-savers/headroom
+    container_name: headroom
+    restart: unless-stopped
+    # Compression service is reachable only by containers, never the host.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/headroom/.cache:uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  vansgo-data:
+    name: vansgo-data
+  vansrouter-data:
+    name: vansrouter-data
