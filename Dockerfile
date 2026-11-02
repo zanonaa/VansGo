@@ -5,7 +5,7 @@ ARG VCS_REF=unknown
 # Runtime Node is retained for the official pinned PXPIPE package, bundled
 # at build time; no dashboard-time download is needed in this image.
 # Step 1: build da SPA com Vite na plataforma nativa do builder.
-FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS spa-builder
+FROM --platform=$BUILDPLATFORM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS spa-builder
 WORKDIR /app
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
@@ -56,7 +56,7 @@ RUN case "$TARGETARCH" in \
     && echo '4044ade9c21d8b084d3d16a03375cf3b7e166b946a327bb37a3fbbdb53287cfd  LICENSE' | sha256sum -c -
 
 # Official PXPIPE runtime, pinned with npm integrity hashes.
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS token-savers
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS token-savers
 WORKDIR /opt/token-savers
 COPY docker/token-savers/package.json docker/token-savers/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund \
@@ -64,7 +64,7 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 
 # Step 3: runner alpine puro: binário Go + dist. A migração do volume legado
 # roda dentro do binário no boot (backend/internal/database/legacy_migration.go).
-FROM node:22-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf AS runner
+FROM node:26-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS runner
 ARG APP_VERSION
 ARG VCS_REF
 WORKDIR /app
