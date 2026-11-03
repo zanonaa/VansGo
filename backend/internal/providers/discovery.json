@@ -228,7 +228,7 @@
     "authPrefix": ""
   },
   "grok-cli": {
-    "url": "https://cli-chat-proxy.grok.com/v1/responses/models",
+    "url": "https://cli-chat-proxy.grok.com/v1/models",
     "public": false,
     "authHeader": "Authorization",
     "authPrefix": "Bearer "
