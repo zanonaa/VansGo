@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   Toggle,
+  SegmentedControl,
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
@@ -97,10 +98,18 @@ function getConnectionErrorTag(connection) {
 
 const APIKEY_INITIAL_VISIBLE = 20;
 
+// Filter options: "active" (default) shows only providers with live
+// connections; "all" shows everything.
+const PROVIDER_FILTER_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "all", label: "All" },
+];
+
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [displayFilter, setDisplayFilter] = useState("active");
   const [showAllApikey, setShowAllApikey] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
@@ -216,6 +225,17 @@ export default function ProvidersPage() {
     return { connected, error, total, errorCode, errorTime, allDisabled };
   }, [connections]);
 
+  // Same "active" definition the cards already use: getProviderStats counts
+  // connections whose effective testStatus is "active" || "success" (incl.
+  // unavailable-during-cooldown); noAuth providers need no connection.
+  const isActiveProvider = useCallback(
+    (providerId, authType) => {
+      const stats = getProviderStats(providerId, authType);
+      return stats.connected > 0 || !stats.allDisabled;
+    },
+    [getProviderStats],
+  );
+
   // Toggle all connections for a provider on/off. authType may be a single
   // string or an array (kiro counts oauth + api_key/apikey together).
   const handleToggleProvider = async (providerId, authType, newActive) => {
@@ -272,8 +292,9 @@ export default function ProvidersPage() {
         textIcon: "OC",
         apiType: node.apiType,
       }))
-      .filter((p) => matchSearch(p.name));
-  }, [providerNodes, matchSearch]);
+      .filter((p) => matchSearch(p.name))
+      .filter((p) => displayFilter === "all" || isActiveProvider(p.id, "apikey"));
+  }, [providerNodes, matchSearch, displayFilter, isActiveProvider]);
 
   const anthropicCompatibleProviders = useMemo(() => {
     return providerNodes
@@ -284,21 +305,25 @@ export default function ProvidersPage() {
         color: "#D97757",
         textIcon: "AC",
       }))
-      .filter((p) => matchSearch(p.name));
-  }, [providerNodes, matchSearch]);
+      .filter((p) => matchSearch(p.name))
+      .filter((p) => displayFilter === "all" || isActiveProvider(p.id, "apikey"));
+  }, [providerNodes, matchSearch, displayFilter, isActiveProvider]);
 
   const oauthEntries = useMemo(() => {
     return sortByPriority(
-      Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
+      Object.entries(OAUTH_PROVIDERS)
+        .filter(([, info]) => !info.hidden && matchSearch(info.name))
+        .filter(([key]) => displayFilter === "all" || isActiveProvider(key, "oauth")),
       "oauth",
     );
-  }, [matchSearch]);
+  }, [matchSearch, displayFilter, isActiveProvider]);
 
   const freeEntries = useMemo(() => {
     return Object.entries(FREE_PROVIDERS)
       .filter(([, info]) => !info.hidden && matchSearch(info.name))
+      .filter(([key]) => displayFilter === "all" || isActiveProvider(key, "oauth"))
       .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
-  }, [matchSearch]);
+  }, [matchSearch, displayFilter, isActiveProvider]);
 
   // Free Tier cards may be OAuth-only (e.g. Kimchi) or dual-auth. Use the
   // registry auth modes instead of assuming every card is API-key-only.
@@ -310,6 +335,7 @@ export default function ProvidersPage() {
           matchSearch(info.name) &&
           (info.serviceKinds ?? ["llm"]).includes("llm"),
       )
+      .filter(([key, info]) => displayFilter === "all" || isActiveProvider(key, getProviderAuthTypes(info, key)))
       .sort(([ka, a], [kb, b]) => {
         const pa = a.priority ?? 999;
         const pb = b.priority ?? 999;
@@ -321,7 +347,7 @@ export default function ProvidersPage() {
         if (ca !== cb) return ca - cb;
         return (a.name || "").localeCompare(b.name || "");
       });
-  }, [matchSearch, getProviderStats]);
+  }, [matchSearch, displayFilter, isActiveProvider, getProviderStats]);
 
   // API Key: connected providers first, then alphabetical by name
   const apikeyEntries = useMemo(() => {
@@ -332,13 +358,14 @@ export default function ProvidersPage() {
           (info.serviceKinds ?? ["llm"]).includes("llm") &&
           matchSearch(info.name),
       )
+      .filter(([key]) => displayFilter === "all" || isActiveProvider(key, "apikey"))
       .sort(([ka, a], [kb, b]) => {
         const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
         const cb = getProviderStats(kb, "apikey").total > 0 ? 0 : 1;
         if (ca !== cb) return ca - cb;
         return (a.name || "").localeCompare(b.name || "");
       });
-  }, [matchSearch, getProviderStats]);
+  }, [matchSearch, displayFilter, isActiveProvider, getProviderStats]);
 
   const webCookieEntries = useMemo(() => {
     return Object.entries(WEB_COOKIE_PROVIDERS)
@@ -347,13 +374,14 @@ export default function ProvidersPage() {
           !info.hidden &&
           matchSearch(info.name),
       )
+      .filter(([key]) => displayFilter === "all" || isActiveProvider(key, "cookie"))
       .sort(([ka, a], [kb, b]) => {
         const ca = getProviderStats(ka, "cookie").total > 0 ? 0 : 1;
         const cb = getProviderStats(kb, "cookie").total > 0 ? 0 : 1;
         if (ca !== cb) return ca - cb;
         return (a.name || "").localeCompare(b.name || "");
       });
-  }, [matchSearch, getProviderStats]);
+  }, [matchSearch, displayFilter, isActiveProvider, getProviderStats]);
   const isApikeySearching = !!searchQuery.trim();
   const visibleApikeyEntries =
     isApikeySearching || showAllApikey
@@ -381,6 +409,15 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+      <div className="flex justify-end">
+        <SegmentedControl
+          options={PROVIDER_FILTER_OPTIONS}
+          value={displayFilter}
+          onChange={setDisplayFilter}
+          size="sm"
+          className="w-full sm:w-auto"
+        />
+      </div>
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
