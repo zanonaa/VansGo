@@ -43,7 +43,7 @@ docker run -d \
   -e INITIAL_PASSWORD='replace-with-a-strong-password' \
   -e NODE_ENV=production \
   --restart unless-stopped \
-  ghcr.io/zanonaa/vansgo:dev-go-arm64
+  ghcr.io/zanonaa/vansgo:latest
 ```
 
 Open `http://localhost:20128/masuk` and log in with `INITIAL_PASSWORD`. The port is loopback-only by default; for external access put an HTTPS reverse proxy with its own authentication in front.
@@ -121,7 +121,7 @@ curl --fail-with-body http://localhost:20128/api/health
 curl --fail-with-body http://localhost:20128/api/version
 ```
 
-`/api/version` compares your build against the GitHub Releases of this repository (`zanonaa/VansGo`); the Dev tag (`dev-go-arm64`) is mutable, so re-pull the image and recreate the container keeping the same volume. Restarting the container alone does not fetch a new image. Do not use `docker compose down -v` to update — it can delete volumes. Take a consistent SQLite backup before upgrading.
+`/api/version` compares your build against the GitHub Releases of this repository (`zanonaa/VansGo`). The `latest` tag is a mutable multi-arch manifest (amd64 + arm64 in one index): re-pull the image and recreate the container keeping the same volume. Restarting the container alone does not fetch a new image. Do not use `docker compose down -v` to update — it can delete volumes. Take a consistent SQLite backup before upgrading.
 
 ## Development
 

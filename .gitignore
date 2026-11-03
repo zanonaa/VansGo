@@ -140,3 +140,7 @@ dist/
 !backend/OAUTH_AUTO_IMPORT.md
 !frontend/scripts/test-combo-autoswitch.mjs
 !docker/token-savers/package-lock.json
+
+# Private local debugging scripts — never commit
+/login-debug*.cjs
+/gemini-quota-check.cjs

@@ -59,13 +59,13 @@ describe("release hardening contracts", () => {
   it("requires an explicit standalone version with its own storage identity", () => {
     const compose = read("docker-compose.yml");
     expect(compose).toContain("VANSGO_IMAGE");
-    expect(compose).toContain("ghcr.io/zanonaa/vansgo:dev-go-arm64");
+    expect(compose).toContain("ghcr.io/zanonaa/vansgo:latest");
+    expect(compose).not.toContain("vansgo:dev-go-arm64");
     expect(compose).not.toContain("ghcr.io/vanszs/vansrouter");
-    expect(compose).not.toContain("vansgo:latest");
     expect(compose).toContain("vansgo-data:/app/data");
     // legacy compat: imports old-repo data without discarding the source
     expect(compose).toContain("vansrouter-data:/migration-data:ro");
-    expect(read(".env.example")).toContain("VANSGO_IMAGE=ghcr.io/zanonaa/vansgo:dev-go-arm64");
+    expect(read(".env.example")).toContain("VANSGO_IMAGE=ghcr.io/zanonaa/vansgo:latest");
     expect(compose).toContain("BIND_ADDRESS:-127.0.0.1");
     expect(compose).toContain("profiles: [headroom]");
     expect(compose).not.toContain("depends_on:");
@@ -90,7 +90,7 @@ describe("release hardening contracts", () => {
     const getStarted = read("frontend/src/app/landing/components/GetStarted.js");
     const navigation = read("frontend/src/app/landing/components/Navigation.js");
     expect(getStarted).toContain("docker run");
-    expect(getStarted).toContain("ghcr.io/zanonaa/vansgo:2.0.0");
+    expect(getStarted).toContain("ghcr.io/zanonaa/vansgo:latest");
     expect(getStarted).toContain("/masuk");
     expect(navigation).toContain("VansGo");
   });

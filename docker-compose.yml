@@ -6,8 +6,8 @@
 
 services:
   vansgo:
-    # Full image reference: Dev ARM64 by default; use vansgo:go-local for a local build.
-    image: ${VANSGO_IMAGE:-ghcr.io/zanonaa/vansgo:dev-go-arm64}
+    # Multi-arch image (amd64 + arm64 in one manifest); use vansgo:go-local for a local build.
+    image: ${VANSGO_IMAGE:-ghcr.io/zanonaa/vansgo:latest}
     container_name: vansgo
     restart: unless-stopped
     ports:
