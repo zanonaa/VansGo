@@ -706,7 +706,9 @@ export default function ProviderDetailPage() {
       for (const model of validModels) {
         const rawId = model.id || model.name || model.model;
         const kind = getModelKind(model);
-        if (kind && kind !== "llm") continue;
+        // Catálogos upstream (ex. zen do opencode) marcam chat como type:"chat";
+        // só descarta kinds não-LLM declarados.
+        if (kind && kind !== "llm" && kind !== "chat") continue;
         if (nonLlmIdPattern.test(rawId)) continue;
 
         const modelId = rawId.replace(prefixPattern, "");
