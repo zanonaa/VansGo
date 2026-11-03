@@ -21,6 +21,7 @@ package handlers
 import (
 	"bufio"
 	"crypto/rand"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +29,33 @@ import (
 	"strings"
 	"time"
 )
+
+// O gate de free tier só encaminha requests cujo primeiro system message é o
+// template oficial do cliente (match de prefixo; append/sufixo passa, edição
+// no meio bloqueia com 429 FreeUsageLimitError disfarçado de quota).
+//
+//go:embed opencode_system_prompt.txt
+var openCodeSystemPrompt string
+
+// openCodeInjectSystemPrefix garante o template oficial como primeiro system
+// message; o system do usuário (quando existe) fica como segundo. Idempotente:
+// clientes opencode oficiais já enviam o template e não são tocados.
+func openCodeInjectSystemPrefix(body map[string]any) {
+	messages, _ := body["messages"].([]any)
+	const firstLine = "You are an AI agent running in OpenCode"
+	for _, raw := range messages {
+		message, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if ttsString(message["role"]) == "system" && strings.HasPrefix(ttsString(message["content"]), firstLine) {
+			return
+		}
+		break
+	}
+	injected := append([]any{map[string]any{"role": "system", "content": openCodeSystemPrompt}}, messages...)
+	body["messages"] = injected
+}
 
 const openCodeUserAgent = "opencode/1.18.31"
 const openCodeDecoyDescription = "This tool is currently unavailable and must not be used."
