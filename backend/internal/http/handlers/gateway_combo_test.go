@@ -62,10 +62,10 @@ func TestChatComboFallbackAndStickyRotation(t *testing.T) {
 	}
 }
 
-// accountFallback.js só cai para o próximo modelo em 401/402/403/404/429 e
-// 5xx. Um 4xx sem regra (410, 408, 409, 413, ...) é erro do pedido e deve ser
-// devolvido sem consumir outro candidato.
-func TestComboDoesNotFallbackOnUnmatched4xx(t *testing.T) {
+// Decisão de produto (2026-11-03, incidente zn-glm): qualquer falha de
+// candidato (410 incluso) segue para o próximo; o erro só chega ao cliente
+// quando a cadeia esgota. Substitui o antigo corte de 4xx da origem.
+func TestComboFallbackTraversesAllCandidates(t *testing.T) {
 	g := gatewayModelsFixture(t)
 	g.DB.Exec(`UPDATE settings SET data='{"requireApiKey":false}'`)
 	if _, err := g.DB.Exec(`INSERT INTO combos VALUES('c','bundle','llm','["openai/primary","openai/second"]',NULL,'now','now');`); err != nil {
@@ -86,11 +86,41 @@ func TestComboDoesNotFallbackOnUnmatched4xx(t *testing.T) {
 	})}}
 	w := httptest.NewRecorder()
 	g.OpenAIChat(w, httptest.NewRequest("POST", "/api/v1/chat/completions", strings.NewReader(`{"model":"bundle","messages":[{"role":"user","content":"hi"}]}`)))
-	if w.Code != 410 {
-		t.Fatalf("status %d, esperado 410: %s", w.Code, w.Body.String())
+	if w.Code != 200 {
+		t.Fatalf("status %d, esperado 200 via fallback: %s", w.Code, w.Body.String())
 	}
-	if strings.Join(requests, ",") != "primary" {
-		t.Fatalf("não deveria tentar o segundo candidato: %v", requests)
+	if strings.Join(requests, ",") != "primary,second" {
+		t.Fatalf("deveria tentar o segundo candidato após 410: %v", requests)
+	}
+}
+
+// Quando TODOS os candidatos falham, o cliente recebe o status do PRIMEIRO
+// (429 do modelo primário, como em combo.js) com a mensagem do ÚLTIMO —
+// nunca antes do esgotamento.
+func TestComboFallbackAllExhaustedReturnsFirstStatus(t *testing.T) {
+	g := gatewayModelsFixture(t)
+	g.DB.Exec(`UPDATE settings SET data='{"requireApiKey":false}'`)
+	if _, err := g.DB.Exec(`INSERT INTO combos VALUES('c','bundle','llm','["openai/primary","openai/second"]',NULL,'now','now');`); err != nil {
+		t.Fatal(err)
+	}
+	g.Send = &TranslatorSend{Connections: sendConnections{items: []map[string]any{{"isActive": true, "apiKey": "upstream"}}}, Client: &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(r.Body)
+		model := "second"
+		if strings.Contains(string(raw), `"model":"primary"`) {
+			model = "primary"
+		}
+		if model == "primary" {
+			return &http.Response{StatusCode: 410, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":"model gone"}`))}, nil
+		}
+		return &http.Response{StatusCode: 429, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"quota exceeded"}}`))}, nil
+	})}}
+	w := httptest.NewRecorder()
+	g.OpenAIChat(w, httptest.NewRequest("POST", "/api/v1/chat/completions", strings.NewReader(`{"model":"bundle","messages":[{"role":"user","content":"hi"}]}`)))
+	if w.Code != 410 {
+		t.Fatalf("status %d, esperado 410 do primeiro candidato: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "quota exceeded") {
+		t.Fatalf("mensagem do ÚLTIMO candidato ausente: %s", w.Body.String())
 	}
 }
 
@@ -206,9 +236,9 @@ func TestComboAllFailedUsesFirstStatusAndLastMessage(t *testing.T) {
 	}
 }
 
-// Quando um candidato bloqueia o fallback (400/422/499), a origem devolve a
-// resposta DELE, não o status de uma falha anterior que já caiu para o próximo.
-func TestComboBlockedCandidateReturnsItsOwnStatus(t *testing.T) {
+// Bloqueio de conteúdo do upstream (moderação) é a única parada antecipada:
+// devolve a resposta do próprio candidato que bloqueou.
+func TestComboContentBlockedCandidateReturnsItsOwnStatus(t *testing.T) {
 	g := gatewayModelsFixture(t)
 	g.DB.Exec(`UPDATE settings SET data='{"requireApiKey":false}'`)
 	if _, err := g.DB.Exec(`INSERT INTO combos VALUES('c','bundle','llm','["openai/primary","openai/blocked"]',NULL,'now','now');`); err != nil {
@@ -219,7 +249,7 @@ func TestComboBlockedCandidateReturnsItsOwnStatus(t *testing.T) {
 		if strings.Contains(string(raw), `"model":"primary"`) {
 			return &http.Response{StatusCode: 429, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":"rate limit"}`))}, nil
 		}
-		return &http.Response{StatusCode: 400, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":"context overflow"}`))}, nil
+		return &http.Response{StatusCode: 400, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":"Sensitive Content detected"}`))}, nil
 	})}}
 	w := httptest.NewRecorder()
 	g.OpenAIChat(w, httptest.NewRequest("POST", "/api/v1/chat/completions", strings.NewReader(`{"model":"bundle","messages":[{"role":"user","content":"hi"}]}`)))
