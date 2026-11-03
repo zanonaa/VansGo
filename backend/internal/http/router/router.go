@@ -396,6 +396,8 @@ func NewWithSPA(ready handlers.Readiness, authentication *auth.HTTP, nodes *hand
 			r.Head("/api/combos", withoutBody(combos.List))
 			r.Post("/api/combos", combos.Create)
 			r.Options("/api/combos", options("GET, HEAD, OPTIONS, POST"))
+			r.Post("/api/combos/{id}/test", combos.Test)
+			r.Options("/api/combos/{id}/test", options("POST, OPTIONS"))
 			r.Get("/api/combos/{id}", combos.Get)
 			r.Head("/api/combos/{id}", withoutBody(combos.Get))
 			r.Put("/api/combos/{id}", combos.Update)

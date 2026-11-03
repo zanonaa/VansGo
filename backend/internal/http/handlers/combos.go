@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"math"
 	"net/http"
 	"regexp"
@@ -20,7 +21,18 @@ type ComboStore interface {
 	Update(context.Context, string, map[string]any) (map[string]any, error)
 	Delete(context.Context, string) (bool, error)
 }
-type Combos struct{ Store ComboStore }
+// Combos também executa o teste individual do combo (Test). As dependências
+// do teste são opcionais — o wiring em cmd/api injeta DB, Ping (ModelPing) e
+// Read (settings); sua ausência responde 503 NOT_CONFIGURED sem afetar o CRUD.
+type Combos struct {
+	Store ComboStore
+	// DB é usado para expandir combos aninhados no teste.
+	DB *sql.DB
+	// Ping executa a sonda de baixo custo (model/kind) contra o gateway.
+	Ping func(ctx context.Context, model, kind string) map[string]any
+	// Read devolve as settings (estratégia); ausente => defaults.
+	Read func(ctx context.Context) (map[string]any, error)
+}
 
 var comboName = regexp.MustCompile(`^[a-zA-Z0-9_.\-]+$`)
 
