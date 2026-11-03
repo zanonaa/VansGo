@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import dynamic from "next/dynamic";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import dynamic from "@/compat/dynamic";
+import Link from "@/compat/link";
+import { usePathname } from "@/compat/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG, GITHUB_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";

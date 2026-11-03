@@ -1,6 +1,6 @@
-// Fase 4A — mapa de rotas da SPA espelhando o App Router.
+// Mapa de rotas da SPA (fonte de verdade: os arquivos page.js em src/app).
 // Caminhos e parâmetros dinâmicos são idênticos aos arquivos page.js; páginas são
-// carregadas em lazy para preservar o code-splitting por rota do Next.
+// carregadas em lazy para preservar o code-splitting por rota.
 import { lazy, Suspense } from "react";
 import { Outlet, useNavigate, useRouteError, isRouteErrorResponse, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/shared/components";
@@ -49,13 +49,13 @@ function RootLayout() {
   );
 }
 
-// O error boundary do grupo (dashboard) espera {error, reset}; reset do App Router
-// re-renderiza o segmento — aqui revalidamos a rota (divergência documentada).
+// O error boundary do grupo (dashboard) espera {error, reset}; reset
+// re-renderiza o segmento (divergência documentada).
 function DashboardErrorRoute() {
   const error = useRouteError();
   const navigate = useNavigate();
-  // notFound() do App Router vira uma Response 404; o Next renderiza a página
-  // 404, não o boundary de erro do dashboard (entidade inexistente, ex. mídia).
+  // notFound() vira uma Response 404; renderiza a página 404 dedicada,
+  // não o boundary de erro do dashboard (entidade inexistente, ex. mídia).
   if (isRouteErrorResponse(error) && error.status === 404) {
     return <RootError />;
   }
@@ -74,21 +74,21 @@ export const routes = [
     errorElement: <RootError />,
     children: [
       // "/" do guard original: apenas redireciona (autenticado → /dashboard,
-      // senão /masuk). A landing continua em /landing, como no App Router.
+      // senão /masuk). A landing continua em /landing.
       { index: true, element: <RootRedirect /> },
       { path: "landing", element: <LandingPage /> },
       // O guard original redireciona /login → /masuk sem renderizar a página.
       { path: "login", element: <Navigate to="/masuk" replace /> },
       { path: "masuk", element: <MasukRoute /> },
       { path: "callback", element: <CallbackPage /> },
-      // /dashboard/settings/pricing fica fora do grupo (dashboard) e, como no
-      // App Router, NÃO herda DashboardLayout.
+      // /dashboard/settings/pricing fica fora do grupo (dashboard) e,
+      // portanto, NÃO herda DashboardLayout.
       { path: "dashboard/settings/pricing", element: <PricingPage /> },
       {
         path: "dashboard",
         element: (
           <AuthGuard>
-            {/* DashboardLayout é o layout do App Router e renderiza
+            {/* DashboardLayout é o layout comum do dashboard e renderiza
                 {children}: a rota precisa passar o <Outlet/> explicitamente,
                 senão o miolo de todas as telas do dashboard fica vazio. */}
             <DashboardLayout>

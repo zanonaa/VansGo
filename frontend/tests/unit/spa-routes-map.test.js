@@ -1,7 +1,7 @@
-// Fase 5 — contrato do mapa de rotas da SPA.
+// Contrato do mapa de rotas da SPA.
 // Garante que (1) todo import lazy de rota aponta para um arquivo existente e
-// (2) toda página page.js restante em src/app possui rota correspondente na
-// SPA — evita perda silenciosa de páginas na migração App Router → react-router.
+// (2) toda página page.js em src/app possui rota correspondente na SPA —
+// evita perda silenciosa de páginas.
 import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -19,7 +19,7 @@ function listPages(dir, acc = []) {
   return acc;
 }
 
-// Caminho do arquivo para o segmento de rota esperado no App Router:
+// Caminho do arquivo para o segmento de rota esperado:
 // src/app/(dashboard)/dashboard/basic-chat/page.js -> dashboard/basic-chat
 function appRouteSegments(pagePath) {
   const relative = path.relative(path.join(root, "src/app"), pagePath).split(path.sep);
@@ -70,20 +70,20 @@ describe("mapa de rotas da SPA", () => {
   });
 
   it("DashboardLayout recebe <Outlet/> e as páginas lazy têm Suspense", () => {
-    // DashboardLayout é o layout do App Router e renderiza {children}; sem o
-    // Outlet explícito o miolo de todas as rotas fica vazio.
+    // DashboardLayout renderiza {children}; sem o Outlet explícito o miolo
+    // de todas as rotas fica vazio.
     expect(routesFile).toMatch(/<DashboardLayout>[\s\S]{0,240}<Outlet \/>/);
     expect(routesFile).toMatch(/<Suspense fallback=\{null\}>/);
   });
 
-  it("compat de next/navigation devolve useSearchParams no formato do Next", () => {
-    // react-router devolve [params, setter]; o código migrado chama .get()
+  it("compat de navegação devolve useSearchParams no formato consumido pelas páginas", () => {
+    // react-router devolve [params, setter]; o código chama .get()
     // direto (Usage quebrava com "searchParams.get is not a function").
     const navigation = readFileSync(path.join(root, "src/compat/navigation.js"), "utf8");
     expect(navigation).toContain("useRouterSearchParams()[0]");
   });
 
-  it("/dashboard/settings/pricing fica fora do DashboardLayout, como no App Router", () => {    const pricingIndex = routesFile.indexOf('"dashboard/settings/pricing"');
+  it("/dashboard/settings/pricing fica fora do DashboardLayout", () => {    const pricingIndex = routesFile.indexOf('"dashboard/settings/pricing"');
     const dashboardIndex = routesFile.indexOf('path: "dashboard"');
     expect(pricingIndex).toBeGreaterThan(-1);
     expect(dashboardIndex).toBeGreaterThan(-1);

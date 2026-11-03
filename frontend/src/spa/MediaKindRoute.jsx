@@ -1,5 +1,5 @@
-// Página de mídia sem leitura direta do banco (Fase 4A): os mesmos três
-// conjuntos que o page.js server-side obtinha de localDb agora vêm dos
+// Página de mídia sem leitura direta do banco: os mesmos três conjuntos que
+// o page.js server-side do app legado obtinha de localDb agora vêm dos
 // endpoints Go, preservando o filtro custom-embedding do nó.
 import { useEffect, useState } from "react";
 import MediaKindClient from "@/app/(dashboard)/dashboard/media-providers/[kind]/MediaKindClient";

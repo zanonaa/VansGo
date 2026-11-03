@@ -61,17 +61,16 @@ const nodeGlobals = {
   prompt: "readonly",
 };
 
-// Fase 4B: sem eslint-config-next/Next. Base @eslint/js recomendada com
-// ajustes que preservam o baseline do repo (0 erros) e o plugin react-hooks,
-// exigido verde pelo regression guard em tests/unit. Regras novas do
-// recommended que não existiam no baseline ficam em warning para limpeza
+// Base @eslint/js recomendada com ajustes que preservam o baseline do repo
+// (0 erros) e o plugin react-hooks, exigido verde pelo regression guard em
+// tests/unit. Regras novas do recommended ficam em warning para limpeza
 // incremental; no-undef permanece error por escopo com globals corretos.
 const eslintConfig = defineConfig([
   js.configs.recommended,
   {
     plugins: { "react-hooks": reactHooks },
-    // O App Router/SPA usa JSX também em arquivos .js (comportamento herdado
-    // do eslint-config-next); habilita o parser JSX para js e jsx.
+    // A SPA usa JSX também em arquivos .js (convenção herdada do app
+    // migrado); habilita o parser JSX para js e jsx.
     languageOptions: {
       parserOptions: { ecmaFeatures: { jsx: true }, sourceType: "module", ecmaVersion: "latest" },
     },
@@ -81,8 +80,7 @@ const eslintConfig = defineConfig([
       "no-useless-assignment": "warn",
       "preserve-caught-error": "warn",
       "no-dupe-keys": "warn",
-      // Regras do recommended ausentes no baseline Next: warning para limpeza
-      // incremental sem bloquear o gate de 0 erros.
+      // Regras de limpeza incremental sem bloquear o gate de 0 erros.
       "no-useless-escape": "warn",
       "no-dupe-class-members": "warn",
       "no-control-regex": "warn",
@@ -90,8 +88,7 @@ const eslintConfig = defineConfig([
       "no-regex-spaces": "warn",
       "no-unreachable": "warn",
       "no-constant-condition": "warn",
-      // Sem resolver de módulos do Next: imports next/* são cobertos pelos
-      // aliases do Vite (src/compat) e não devem falhar no lint.
+      // Sem resolver de módulos: imports @/compat/* não devem falhar no lint.
       "no-undef": "off",
     },
   },
@@ -118,8 +115,6 @@ const eslintConfig = defineConfig([
     },
   },
   globalIgnores([
-    ".next/**",
-    ".next-cli-build/**",
     "out/**",
     "build/**",
     "dist/**",

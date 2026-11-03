@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname } from "@/compat/navigation";
 import { initRuntimeI18n, reloadTranslations } from "./runtime";
 
 export function RuntimeI18nProvider({ children }) {

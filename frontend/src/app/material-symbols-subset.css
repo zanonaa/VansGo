@@ -1,10 +1,11 @@
 /* Subset of Material Symbols Outlined — only icons actually used in the app.
  *
- * The font itself is loaded via a <link> in src/app/layout.js (Next.js webpack
- * strips @import external URLs at build time, so we cannot use @import here).
+ * The font is loaded via a <link> in index.html (external @import URLs are
+ * not resolved by the Vite CSS pipeline, so we cannot use @import here).
  *
  * If you add a new icon name in JSX, append it to the icon_names list in
- * layout.js and re-sort it alphabetically — Google Fonts returns 400 otherwise.
+ * scripts/subset-material-symbols.cjs and re-sort it alphabetically
+ * — Google Fonts returns 400 otherwise.
  */
 
 .material-symbols-outlined {

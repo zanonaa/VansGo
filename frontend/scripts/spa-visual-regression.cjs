@@ -1,4 +1,4 @@
-// Fase 5 — regressão de navegação/visual da SPA na mesma origem (Go + dist).
+// Regressão de navegação/visual da SPA na mesma origem (Go + dist).
 // Para cada rota concreta: navegação direta (deep link), verificação de que a
 // página renderizou sem cair no error boundary, reload e re-verificação, e
 // screenshot como artefato local (não commitado).

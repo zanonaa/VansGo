@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
+import { useParams, useRouter } from "@/compat/navigation";
+import Link from "@/compat/link";
+import Image from "@/compat/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import ModelImportModal from "@/shared/components/ModelImportModal.js";

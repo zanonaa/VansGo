@@ -1,4 +1,4 @@
-// Guard de páginas da SPA (Fase 4A) — papel do dashboardGuard para navegação.
+// Guard de páginas da SPA — decisão de navegação por papel de autenticação.
 // A decisão de autenticação vem SEMPRE do backend via /api/auth/check
 // (cookie auth_token), que responde 200 autenticado ou 401; nada de sessão
 // ou segredo é avaliado no navegador.
@@ -19,7 +19,7 @@ export function decideRootRedirect(authenticated) {
 }
 
 // Página "/" do guard original: nunca renderiza conteúdo, apenas redireciona
-// conforme autenticação. A landing vive em /landing, como no App Router.
+// conforme autenticação. A landing vive em /landing.
 export async function fetchAuthStatus() {
   try {
     const res = await fetch("/api/auth/check", { headers: { Accept: "application/json" } });

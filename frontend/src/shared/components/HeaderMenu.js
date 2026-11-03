@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import dynamic from "next/dynamic";
+import dynamic from "@/compat/dynamic";
 import { useTheme } from "@/shared/hooks/useTheme";
 const ChangelogModal = dynamic(() => import("./ChangelogModal"), { ssr: false });
 import { ConfirmModal } from "./Modal";
