@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/compat/link";
 import { APP_CONFIG } from "@/shared/constants/config";
 
 const footerLinks = {

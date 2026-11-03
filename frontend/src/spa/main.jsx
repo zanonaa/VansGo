@@ -1,7 +1,4 @@
-// Fase 4A — entrada da SPA em Vite.
-// Os efeitos colaterais de servidor do app/layout.js (initOutboundProxy, bootstrap,
-// initConsoleLogCapture) não são importados aqui: inicialização/schedulers já
-// pertencem ao processo Go desde a Fase 3.
+// Entrada da SPA em Vite.
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@/app/globals.css";

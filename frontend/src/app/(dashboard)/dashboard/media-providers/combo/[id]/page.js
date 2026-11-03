@@ -1,9 +1,9 @@
 "use client";
 
-import { useParams, notFound, useRouter } from "next/navigation";
+import { useParams, notFound, useRouter } from "@/compat/navigation";
 import { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
-import Image from "next/image";
+import Link from "@/compat/link";
+import Image from "@/compat/image";
 import { Card, Button, Input, Toggle, ModelSelectModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";

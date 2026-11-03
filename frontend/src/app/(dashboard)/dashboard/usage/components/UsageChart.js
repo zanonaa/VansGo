@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import dynamic from "next/dynamic";
+import dynamic from "@/compat/dynamic";
 import Card from "@/shared/components/Card";
 import { fmtTokens } from "./format";
 

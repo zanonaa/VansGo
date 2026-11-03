@@ -1,7 +1,7 @@
 "use client";
 
-import { useParams, notFound, useRouter } from "next/navigation";
-import Link from "next/link";
+import { useParams, notFound, useRouter } from "@/compat/navigation";
+import Link from "@/compat/link";
 import { useEffect, useState } from "react";
 import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";

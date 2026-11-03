@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
+import Link from "@/compat/link";
 
 export default function DashboardError({ error, reset }) {
   useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import dynamic from "@/compat/dynamic";
 
 // Shared Components - Export all
 export { default as Button } from "./Button";

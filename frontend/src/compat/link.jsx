@@ -1,5 +1,5 @@
-// Compatibilidade next/link sobre react-router (Fase 4A).
-// Aceita href/replace/prefetch e URLs externas; URLs absolutas viram <a> comum.
+// Compat de link sobre react-router: aceita href/replace/prefetch e URLs
+// externas; URLs absolutas viram <a> comum.
 import { Link as RouterLink } from "react-router-dom";
 
 const isExternal = (href) =>

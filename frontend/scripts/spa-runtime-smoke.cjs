@@ -1,4 +1,4 @@
-// Smoke de runtime da Fase 4A: SPA Vite (20129, proxy /api→Go 20128) no
+// Smoke de runtime da SPA: Vite dev (20129, proxy /api→Go 20128).
 // navegador real. Valida guard, login com senha inicial, dashboard e deep link.
 // Executado uma única vez contra dados descartáveis; não é teste de regressão.
 // Nota: waitUntil "load" (networkidle nunca ocorre com o WebSocket do HMR).

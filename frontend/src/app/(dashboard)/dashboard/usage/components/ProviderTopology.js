@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import Image from "next/image";
+import Image from "@/compat/image";
 
 const EMPTY_PROVIDERS = [];
 const EMPTY_REQUESTS = [];

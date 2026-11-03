@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams } from "@/compat/navigation";
 
 /**
  * OAuth Callback Page Content

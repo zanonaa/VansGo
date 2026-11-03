@@ -1,11 +1,10 @@
-// Compatibilidade next/navigation sobre react-router (Fase 4A).
-// refresh() do Next reexecuta Server Components; na SPA a semântica equivalente
-// mais próxima é revalidar a rota atual (documentada como divergência no lote).
+// Compat de navegação sobre react-router.
+// refresh() revalida a rota atual (divergência documentada no lote de migração).
 import { useLocation, useNavigate, useParams, useSearchParams as useRouterSearchParams } from "react-router-dom";
 
 export { useParams };
 
-// next/navigation: useSearchParams() devolve o URLSearchParams (somente leitura).
+// useSearchParams() devolve o URLSearchParams (somente leitura).
 // react-router devolve a tupla [params, setter]; expor a tupla fazia as páginas
 // migradas quebrarem em runtime ("searchParams.get is not a function" na Usage).
 export function useSearchParams() {
@@ -18,8 +17,7 @@ export function usePathname() {
 
 export function useRouter() {
   const navigate = useNavigate();
-  // refresh() do Next reexecuta Server Components da rota atual. Em SPA, a
-  // semântica equivalente é revalidar a rota corrente — mas chamadas como
+  // refresh() revalida a rota corrente. Chamadas como
   // push(url) seguido de refresh() precisam ler a URL DEPOIS da navegação
   // pendente, senão o refresh cancelaria o push (bug observado no login).
   const revalidate = () => {
@@ -38,7 +36,7 @@ export function useRouter() {
   };
 }
 
-// next/navigation notFound() sinaliza 404 para o error boundary mais próximo.
+// notFound() sinaliza 404 para o error boundary mais próximo.
 // O react-router só reconhece ErrorResponse (isRouteErrorResponse exige
 // `internal`); lançar uma Response crua durante o render cai no boundary de
 // erro genérico — foi o que aconteceu na tela de mídia com id inexistente.

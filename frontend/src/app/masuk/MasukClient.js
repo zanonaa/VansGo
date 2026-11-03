@@ -4,7 +4,7 @@ import { useState, useEffect, useReducer } from "react";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Input from "@/shared/components/Input";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/compat/navigation";
 
 function handleOidcLogin() {
   window.location.href = "/api/auth/oidc/start";

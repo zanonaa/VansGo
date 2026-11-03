@@ -84,6 +84,8 @@ describe("release hardening contracts", () => {
   it("keeps runtime scripts free of Next entries and documents the app port", () => {
     const packageJson = JSON.parse(read("frontend/package.json"));
     const scripts = Object.values(packageJson.scripts || {}).join(" ");
+    // Anti-regressão: os scripts são Vite/vitest; nenhum CLI do antigo
+    // bundler Next pode voltar ao runtime.
     expect(scripts).not.toContain("next ");
     expect(scripts).not.toMatch(/next-(dev|build|start)/);
     expect(read("docker-compose.yml")).toContain("${PORT:-20128}:20128");

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Card, Button } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useTheme } from "@/shared/hooks/useTheme";
-import dynamic from "next/dynamic";
+import dynamic from "@/compat/dynamic";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 

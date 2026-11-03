@@ -9,7 +9,7 @@
  * wraps setProviderFilter to call router.replace when the filter changes.
  *
  * Because ProviderLimits is a JSX file we cannot import it in Vitest without
- * a full Next.js setup. We verify the source text instead.
+ * a full browser setup. We verify the source text instead.
  */
 
 import { describe, it, expect } from "vitest";
@@ -22,17 +22,11 @@ const src = fs.readFileSync(
 );
 
 describe("ProviderLimits — URL ?provider= sync (#4217)", () => {
-  it("imports useSearchParams from next/navigation", () => {
+  it("imports the navigation compat hooks", () => {
     expect(src).toContain("useSearchParams");
-    expect(src).toContain("next/navigation");
-  });
-
-  it("imports useRouter from next/navigation", () => {
     expect(src).toContain("useRouter");
-  });
-
-  it("imports usePathname from next/navigation", () => {
     expect(src).toContain("usePathname");
+    expect(src).toContain("@/compat/navigation");
   });
 
   it("initializes providerFilter from searchParams.get('provider')", () => {

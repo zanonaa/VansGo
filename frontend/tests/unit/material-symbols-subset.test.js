@@ -5,8 +5,8 @@ import path from "path";
 /**
  * The icon font used to ship as the full ~3.96 MB material-symbols package with
  * font-display:block, which delayed first paint by ~20s on throttled mobile.
- * These tests guard the replacement: a self-hosted subset loaded through
- * next/font/local, with no runtime CDN fetch and no full package stylesheet.
+ * These tests guard the replacement: a self-hosted subset, with no runtime
+ * CDN fetch and no full package stylesheet.
  *
  * The last test is the important one: it fails when a new icon is written as a
  * JSX text child without regenerating the subset (which is how expand_more,

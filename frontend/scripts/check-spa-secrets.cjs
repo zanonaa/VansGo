@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Fase 5 — verificação de que nenhum segredo/configuração de ambiente vaza no
-// bundle estático da SPA. O Vite substitui process.env por valores vazios
-// (exceto NEXT_PUBLIC_* documentadas); este script varre o dist em busca de
-// chaves sensíveis do .env.example e de padrões de credencial embutidos.
+// Verificação de que nenhum segredo/configuração de ambiente vaza no
+// bundle estático da SPA. O Vite substitui process.env por valores vazios;
+// este script varre o dist em busca de chaves sensíveis do .env.example e
+// de padrões de credencial embutidos.
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -23,12 +23,10 @@ if (!fs.existsSync(path.join(dist, "index.html"))) {
 // de exemplo com INITIAL_PASSWORD='replace-with-a-strong-password'.
 const envExample = fs.readFileSync(path.join(root, "..", ".env.example"), "utf8");
 const placeholders = new Map();
-const secretKeys = [...envExample.matchAll(/^([A-Z][A-Z0-9_]+)=(.*)$/gm)]
-  .map((m) => {
-    placeholders.set(m[1], m[2].trim());
-    return m[1];
-  })
-  .filter((key) => !key.startsWith("NEXT_PUBLIC_"));
+for (const m of envExample.matchAll(/^([A-Z][A-Z0-9_]+)=(.*)$/gm)) {
+  placeholders.set(m[1], m[2].trim());
+}
+const secretKeys = [...placeholders.keys()];
 
 const files = [];
 (function walk(dir) {

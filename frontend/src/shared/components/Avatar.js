@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import Image from "@/compat/image";
 import { cn } from "@/shared/utils/cn";
 
 const AVATAR_SIZES = {

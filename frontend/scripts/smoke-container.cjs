@@ -203,7 +203,6 @@ async function runContainerSmoke({
       "-e", "HOSTNAME=0.0.0.0",
       "-e", "NODE_ENV=production",
       "-e", "INITIAL_PASSWORD=123456",
-      "-e", "NEXT_TELEMETRY_DISABLED=1",
       "-e", "VANSGO_SKIP_UPDATE_CHECK=1",
       "-e", "VANSGO_SKIP_UPDATE_CHECK=1",
       "-v", `${volume}:/app/data`,
