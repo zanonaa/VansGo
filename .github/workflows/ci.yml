@@ -108,6 +108,7 @@ jobs:
           tags: |
             ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
             ${{ env.GHCR_IMAGE }}:${{ github.sha }}
+            ${{ env.GHCR_IMAGE }}:latest
           build-args: |
             APP_VERSION=${{ steps.version.outputs.version }}
             VCS_REF=${{ github.sha }}
