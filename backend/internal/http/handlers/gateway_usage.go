@@ -95,10 +95,11 @@ func (t usageTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			r.Body = io.NopCloser(bytes.NewReader(encoded))
 		}
 	}
+	response, err := t.base.RoundTrip(r)
+	// TTFT da origem: primeiro byte da resposta, não o momento do envio.
 	if t.usage.firstByteAt.IsZero() {
 		t.usage.firstByteAt = time.Now()
 	}
-	response, err := t.base.RoundTrip(r)
 	if err == nil && response.StatusCode >= 200 && response.StatusCode < 300 {
 		t.usage.succeeded = true
 		response.Body = &usageBody{ReadCloser: response.Body, u: t.usage, stream: strings.Contains(response.Header.Get("Content-Type"), "event-stream") || strings.Contains(response.Header.Get("Content-Type"), "ndjson") || t.usage.provider == "commandcode"}
