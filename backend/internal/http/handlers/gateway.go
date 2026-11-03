@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/zanonaa/VansGo/backend/internal/database"
 	"github.com/zanonaa/VansGo/backend/internal/providers"
@@ -175,7 +176,10 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if provider != "" {
-		usage := &requestUsage{provider: provider, model: model, live: g.LiveUsage, inputEstimate: estimateInputTokens(body)}
+		// requestDetails: corpo do cliente em bruto (clientRaw) — body é
+		// mutado pela tradução adiante; detailID/started alimentam a aba.
+		clientRaw, _ := json.Marshal(body)
+		usage := &requestUsage{provider: provider, model: model, live: g.LiveUsage, inputEstimate: estimateInputTokens(body), clientRaw: clientRaw, detailID: newDetailID(), started: time.Now()}
 		if usage.live != nil {
 			usage.live.Track(model, provider, "", true, false)
 		}

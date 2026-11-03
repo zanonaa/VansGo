@@ -97,6 +97,65 @@ func TestGatewayPersistsUsageAndDailyWithoutDoubleCounting(t *testing.T) {
 	}
 }
 
+func TestGatewayPersistsRequestDetail(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := database.Open(ctx, dir, "NORMAL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = database.Migrate(ctx, db, dir); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`INSERT INTO settings(id,data) VALUES(1,'{"requireApiKey":false}') ON CONFLICT(id) DO UPDATE SET data=excluded.data`)
+	db.Exec(`INSERT INTO providerConnections(id,provider,authType,isActive,data,createdAt,updatedAt) VALUES('account','openai','apikey',1,'{"apiKey":"upstream"}','now','now')`)
+	client := &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":100,"completion_tokens":20}}`))}, nil
+	})}
+	g := &Gateway{DB: db, LiveUsage: &UsageLive{History: database.Usage{DB: db}, Connections: database.Connections{DB: db}}, Send: &TranslatorSend{Connections: database.Connections{DB: db}, Client: client}}
+	body := `{"model":"openai/final","messages":[{"role":"user","content":"hello"}]}`
+	w := httptest.NewRecorder()
+	g.OpenAIChat(w, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body)))
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	var raw string
+	if err = db.QueryRow(`SELECT data FROM requestDetails`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var detail map[string]any
+	if json.Unmarshal([]byte(raw), &detail) != nil {
+		t.Fatal("data is not JSON")
+	}
+	for key, want := range map[string]any{"provider": "openai", "model": "final", "connectionId": "account", "status": "success"} {
+		if detail[key] != want {
+			t.Fatalf("%s: %v want %v", key, detail[key], want)
+		}
+	}
+	request, _ := detail["request"].(map[string]any)
+	if request == nil || request["model"] != "openai/final" {
+		t.Fatalf("request: %v", detail["request"])
+	}
+	if detail["providerRequest"] == nil || detail["providerResponse"] == nil || detail["response"] == nil {
+		t.Fatalf("payloads missing: %v", detail)
+	}
+	// Resposta sem usage também gera linha (status success, tokens vazios).
+	db.Exec(`DELETE FROM requestDetails`)
+	client.Transport = kiroImportTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 502, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":"boom"}`))}, nil
+	})
+	w = httptest.NewRecorder()
+	g.OpenAIChat(w, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body)))
+	var status string
+	if err = db.QueryRow(`SELECT status FROM requestDetails`).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "error" {
+		t.Fatalf("failed upstream: %q", status)
+	}
+}
+
 func TestUsageObserverHeaderlessSSEAndNativeDetails(t *testing.T) {
 	for _, prefix := range []string{"event: response.created\n", ": keepalive\n\nevent: response.created\n"} {
 		u := &requestUsage{}

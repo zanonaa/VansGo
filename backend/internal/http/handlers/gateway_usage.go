@@ -3,7 +3,9 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -27,6 +29,16 @@ type requestUsage struct {
 	inputEstimate int
 	contentChars  int
 	succeeded     bool
+	// Campos da linha em requestDetails (aba Details): corpo do cliente,
+	// corpo traduzido enviado ao upstream (capturado no usageTransport) e
+	// resposta bruta do provider, todos pré-truncados para detailPayloadCap.
+	// detailID segue o formato da origem (epoch-ms + sufixo aleatório).
+	clientRaw       []byte
+	providerRequest []byte
+	providerRaw     []byte
+	detailID        string
+	started         time.Time
+	firstByteAt     time.Time
 }
 
 // Mesmo buffer aplicado por addBufferToUsage na origem Node ao estimar usage.
@@ -77,6 +89,15 @@ type usageTransport struct {
 }
 
 func (t usageTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Body != nil {
+		if encoded, err := io.ReadAll(r.Body); err == nil {
+			t.usage.providerRequest = encoded
+			r.Body = io.NopCloser(bytes.NewReader(encoded))
+		}
+	}
+	if t.usage.firstByteAt.IsZero() {
+		t.usage.firstByteAt = time.Now()
+	}
 	response, err := t.base.RoundTrip(r)
 	if err == nil && response.StatusCode >= 200 && response.StatusCode < 300 {
 		t.usage.succeeded = true
@@ -87,14 +108,21 @@ func (t usageTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 type usageBody struct {
 	io.ReadCloser
-	u       *requestUsage
-	pending []byte
-	stream  bool
+	u          *requestUsage
+	pending    []byte
+	stream     bool
+	rawDropped bool
 }
 
 func (b *usageBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
 	b.pending = append(b.pending, p[:n]...)
+	if len(b.u.providerRaw) < detailPayloadCap {
+		b.u.providerRaw = append(b.u.providerRaw, p[:n]...)
+	} else if !b.rawDropped {
+		b.rawDropped = true
+		b.u.providerRaw = b.u.providerRaw[:detailPayloadCap]
+	}
 	// Some Codex/Grok upstreams omit Content-Type and begin SSE with event:
 	// rather than data:. Detect both (including a prefix split across reads).
 	trimmed := bytes.TrimSpace(b.pending)
@@ -274,6 +302,83 @@ func (u *requestUsage) applyEstimatedUsage() {
 		u.tokens["estimated"] = true
 	}
 }
+
+// detailPayloadCap limita cada payload armazenado em requestDetails. Campos
+// maiores viram o marcador {_truncated:true,_originalSize,_preview} que o
+// RequestDetailsTab.js renderiza como "Payload truncated".
+const detailPayloadCap = 64 << 10
+
+// detailJSON decodifica raw e aplica o cap da origem Node (truncateField);
+// devolve nil quando vazio ou fora do JSON (o SSE bruto vai como string).
+func detailJSON(raw []byte) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		encoded := raw
+		if len(encoded) > detailPayloadCap {
+			encoded = encoded[:detailPayloadCap]
+		}
+		return string(encoded)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	if len(encoded) <= detailPayloadCap {
+		return value
+	}
+	preview := string(encoded)
+	if len(preview) > 600 {
+		preview = preview[:600]
+	}
+	return map[string]any{"_truncated": true, "_originalSize": len(encoded), "_preview": preview}
+}
+
+// detailRecord monta o JSON da coluna data no formato que RequestDetailsTab.js
+// consome (paridade com a origem: request/providerRequest/providerResponse/
+// response/latency/tokens/status). Sem stream, providerRaw é a própria resposta
+// do provider e também alimenta a seção de resposta; em stream o payload fica
+// no providerResponse bruto.
+func detailRecord(u *requestUsage, apiKey string) map[string]any {
+	status := "success"
+	if !u.succeeded {
+		status = "error"
+	}
+	tokens := map[string]any{}
+	for key, value := range u.tokens {
+		tokens[key] = value
+	}
+	detail := map[string]any{
+		"id": u.detailID, "timestamp": u.started.UTC().Format("2006-01-02T15:04:05.000Z"),
+		"provider": u.provider, "model": u.model, "connectionId": u.connection,
+		"apiKey": apiKey, "status": status,
+		"latency": map[string]any{"ttft": u.firstByteAt.Sub(u.started).Milliseconds(), "total": time.Since(u.started).Milliseconds()},
+		"tokens":  tokens,
+		"request": detailJSON(u.clientRaw),
+	}
+	if translated := detailJSON(u.providerRequest); translated != nil {
+		detail["providerRequest"] = translated
+	}
+	if raw := detailJSON(u.providerRaw); raw != nil {
+		detail["providerResponse"] = raw
+		if _, ok := raw.(map[string]any); ok {
+			detail["response"] = raw
+		}
+	}
+	return detail
+}
+
+// newDetailID segue o formato da origem (epoch-ms + sufixo aleatório).
+func newDetailID() string {
+	random := make([]byte, 6)
+	if _, err := rand.Read(random); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixMilli())
+	}
+	return fmt.Sprintf("%d-%x", time.Now().UnixMilli(), random)
+}
+
 func (u *requestUsage) observe(event map[string]any) {
 	for _, key := range []string{"response", "message"} {
 		if nested, ok := event[key].(map[string]any); ok {
@@ -339,11 +444,21 @@ func (g *Gateway) finishUsage(r *http.Request, u *requestUsage) {
 		defer u.live.Track(u.model, u.provider, u.connection, false, false)
 	}
 	u.applyEstimatedUsage()
+	// Paridade com a origem Node: todo request roteado pelo gateway gera uma
+	// linha em requestDetails (aba Details), inclusive falhas upstream, que
+	// antes não geravam row nenhuma.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
+	detail := detailRecord(u, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	if key := r.Header.Get("x-api-key"); key != "" && detail["apiKey"] == "" {
+		detail["apiKey"] = key
+	}
+	if err := (database.Usage{DB: g.DB}).RecordDetail(ctx, detail); err != nil {
+		slog.Error("failed to persist request detail", "error", err)
+	}
 	if pxpipeNum(u.tokens["prompt_tokens"])+pxpipeNum(u.tokens["completion_tokens"]) == 0 {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
-	defer cancel()
 	cost := 0.0
 	prices, err := (Pricing{Store: database.Pricing{DB: g.DB}}).merged(ctx)
 	if err == nil {
