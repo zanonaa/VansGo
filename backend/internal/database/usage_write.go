@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+// RecordDetail grava uma linha da aba Details (requestDetails). O `data` JSON
+// é o mesmo documento consumido pelo RequestDetailsTab.js da origem Node.
+func (u Usage) RecordDetail(ctx context.Context, detail map[string]any) error {
+	encoded, err := json.Marshal(detail)
+	if err != nil {
+		return err
+	}
+	id, _ := detail["id"].(string)
+	if id == "" {
+		return nil
+	}
+	_, err = u.DB.ExecContext(ctx, `INSERT OR REPLACE INTO requestDetails(id,timestamp,provider,model,connectionId,status,data,apiKey,apiKeyName) VALUES(?,?,?,?,?,?,?,?,?)`,
+		id, detail["timestamp"], detail["provider"], detail["model"], detail["connectionId"], detail["status"], string(encoded), detail["apiKey"], detail["apiKeyName"])
+	if err != nil {
+		return err
+	}
+	// Retenção da origem: a tabela mantém as 1000 linhas mais recentes.
+	_, err = u.DB.ExecContext(ctx, `DELETE FROM requestDetails WHERE id NOT IN (SELECT id FROM requestDetails ORDER BY timestamp DESC LIMIT 1000)`)
+	return err
+}
+
 // RecordUsage commits history, daily aggregates and lifetime counter together.
 func (u Usage) RecordUsage(ctx context.Context, entry map[string]any) error {
 	tx, err := u.DB.BeginTx(ctx, nil)
