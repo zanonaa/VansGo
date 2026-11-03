@@ -40,6 +40,9 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 		outbound[key] = value
 	}
 	outbound["model"] = model
+	// Template oficial no primeiro system: sem isso o gate devolve 429
+	// FreeUsageLimitError para todo request (não é quota — é fingerprint).
+	openCodeInjectSystemPrefix(outbound)
 
 	clientWantsStream := outbound["stream"] == true
 	outbound["stream"] = true
