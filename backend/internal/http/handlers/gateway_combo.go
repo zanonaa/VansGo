@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/zanonaa/VansGo/backend/internal/database"
 	"github.com/zanonaa/VansGo/backend/internal/providers"
+
 )
 
 // comboAttempt delays commitment until a successful response. Successful bytes
@@ -76,10 +79,6 @@ func (c *comboAttempt) finalError() {
 	c.destination.Write(c.failure.Bytes())
 }
 
-// expandComboEntries expande as entradas de um combo. Entradas sem "/" são
-// referência a outro combo (combos aninhados, como a origem resolve em
-// getComboModelsFromData); entradas sem barra que não são combo passam
-// adiante para falharem como model downstream. Ciclos são rejeitados.
 // comboShouldFallback reproduz a política essencial de
 // open-sse/services/accountFallback.js (ERROR_RULES): erros de conta
 // (401/402/403/404/429) e de servidor (5xx) seguem para o próximo model do
@@ -164,14 +163,18 @@ func comboGenericProviderError(message string) bool {
 	return strings.HasPrefix(message, "Provider error: ")
 }
 
-func (g *Gateway) expandComboEntries(r *http.Request, name string, entries []any) ([]string, error) {
+// expandComboCandidates resolve as entradas de um combo (entradas sem "/" são
+// referência a outro combo, como na origem) e devolve a lista linear de
+// candidatos na ordem da estratégia. Ciclos/profundidade > 8 são rejeitados.
+// Usado pelo chat e pelo teste do combo (POST /api/combos/{id}/test).
+func expandComboCandidates(ctx context.Context, db *sql.DB, name string, entries []any) ([]string, error) {
 	models := []string{}
 	var expand func(entry string, depth int, visited map[string]bool) error
 	expand = func(entry string, depth int, visited map[string]bool) error {
 		if visited[entry] || depth > 8 {
 			return fmt.Errorf("Circular or too-deep combo reference: %s", entry)
 		}
-		nested, err := (database.Combos{DB: g.DB}).ByName(r.Context(), entry)
+		nested, err := (database.Combos{DB: db}).ByName(ctx, entry)
 		if err != nil {
 			return err
 		}
@@ -210,6 +213,26 @@ func (g *Gateway) expandComboEntries(r *http.Request, name string, entries []any
 		}
 	}
 	return models, nil
+}
+
+// comboStrategy devolve a estratégia do combo: global `comboStrategy`
+// (fallback como default, como na origem) com override por combo em
+// `comboStrategies[nome].fallbackStrategy`.
+func comboStrategy(settings map[string]any, name string) string {
+	strategy := ttsString(settings["comboStrategy"])
+	if strategy == "" {
+		strategy = "fallback"
+	}
+	strategies, _ := settings["comboStrategies"].(map[string]any)
+	custom, _ := strategies[name].(map[string]any)
+	if override := ttsString(custom["fallbackStrategy"]); override != "" {
+		strategy = override
+	}
+	return strategy
+}
+
+func (g *Gateway) expandComboEntries(r *http.Request, name string, entries []any) ([]string, error) {
+	return expandComboCandidates(r.Context(), g.DB, name, entries)
 }
 
 func (g *Gateway) chatCombo(w http.ResponseWriter, r *http.Request, key, body map[string]any) bool {
@@ -252,15 +275,9 @@ func (g *Gateway) chatCombo(w http.ResponseWriter, r *http.Request, key, body ma
 		g.webError(w, 500, "Failed to load settings")
 		return true
 	}
-	strategy := ttsString(settings["comboStrategy"])
-	if strategy == "" {
-		strategy = "fallback"
-	}
+	strategy := comboStrategy(settings, name)
 	strategies, _ := settings["comboStrategies"].(map[string]any)
 	custom, _ := strategies[name].(map[string]any)
-	if override := ttsString(custom["fallbackStrategy"]); override != "" {
-		strategy = override
-	}
 	if strategy == "fusion" {
 		g.fusionCombo(w, r, models, name, custom, body)
 		return true

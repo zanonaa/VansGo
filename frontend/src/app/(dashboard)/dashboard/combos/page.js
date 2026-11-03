@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, Button, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, ComboFormModal } from "@/shared/components";
+import ComboTestModal from "@/shared/components/ComboTestModal";
+import { normalizeComboTestResponse } from "@/shared/comboTest";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -18,6 +20,29 @@ export default function CombosPage() {
   const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  const [testState, setTestState] = useState(null);
+
+  const runComboTest = async (combo) => {
+    setTestState({ combo, loading: true, result: null, error: null });
+    try {
+      const res = await fetch(`/api/combos/${combo.id}/test`, { method: "POST" });
+      const body = await res.json().catch(() => null);
+      const result = normalizeComboTestResponse(body);
+      setTestState({
+        combo,
+        loading: false,
+        result,
+        error: res.ok ? null : body?.error || result.error || `HTTP ${res.status}`,
+      });
+    } catch (error) {
+      setTestState({
+        combo,
+        loading: false,
+        result: null,
+        error: error?.message || "Request failed",
+      });
+    }
+  };
 
   /* eslint-disable react-hooks/immutability, react-hooks/set-state-in-effect --
      One-time bootstrap fetch on mount; fetchData is declared below. */
@@ -371,6 +396,8 @@ export default function CombosPage() {
                 onCopy={copy}
                 onEdit={() => setEditingCombo(combo)}
                 onDelete={() => handleDelete(combo.id)}
+                onTest={() => runComboTest(combo)}
+                testBusy={testState?.loading === true && testState.combo?.id === combo.id}
                 strategy={comboStrategies[combo.name] || {}}
                 onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
                 selected={selectedIds.includes(combo.id)}
@@ -414,6 +441,18 @@ export default function CombosPage() {
         variant={confirmState?.variant || "danger"}
         loading={!!confirmState?.loading}
       />
+
+      {/* Combo live test (verdict + per-attempt diagnostics) */}
+      {testState && (
+        <ComboTestModal
+          isOpen={true}
+          onClose={() => !testState.loading && setTestState(null)}
+          combo={testState.combo}
+          result={testState.result}
+          error={testState.error}
+          loading={testState.loading === true}
+        />
+      )}
     </div>
   );
 }
@@ -424,7 +463,7 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
+function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect, onTest, testBusy = false }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
@@ -513,7 +552,19 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={(e) => { e.stopPropagation(); onTest?.(); }}
+              disabled={testBusy}
+              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/5"
+              title="Test combo — minimal live call in strategy order"
+              aria-label={`Test combo ${combo.name}`}
+            >
+              <span className={`material-symbols-outlined text-[18px] ${testBusy ? "animate-spin" : ""}`}>
+                {testBusy ? "progress_activity" : "science"}
+              </span>
+              <span className="text-[10px] leading-tight">Test</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
