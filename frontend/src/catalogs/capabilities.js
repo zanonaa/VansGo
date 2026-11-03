@@ -419,13 +419,6 @@ export const MODEL_CAPABILITIES = {
     contextWindow: 262144,
     maxOutput: 65536,
   },
-  // OpenCode Free Muse Spark — OpenAI Responses reasoning supports up to xhigh.
-  "muse-spark-1.2-contributor-free": {
-    reasoning: true,
-    thinkingFormat: "openai",
-    contextWindow: 1048576,
-    maxOutput: 131072,
-  },
   // OpenCode Go Muse Spark — same Responses reasoning shape as the free tier.
   "muse-spark-1.2-contributor": {
     reasoning: true,
