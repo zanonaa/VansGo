@@ -27,7 +27,7 @@ RUN pnpm run build && test -f frontend/dist/index.html \
 # plataforma do builder (BUILDPLATFORM) e GOARCH compila para o alvo — arm64
 # sai sem emulação QEMU.
 # Digest multi-arch do manifest verificado no Docker Hub (Fase 6).
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine@sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59 AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS go-builder
 ARG TARGETARCH
 # A versão calculada no CI precisa entrar no arquivo embutido por
 # //go:embed. Sem isso o binário sempre reportava 2.0.0 e o /api/version não
@@ -41,7 +41,7 @@ RUN if [ "$APP_VERSION" != "unknown" ]; then printf '%s\n' "$APP_VERSION" > inte
   && CGO_ENABLED=0 GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/vansgo ./cmd/api
 
 # Download official release artifacts on the builder host; no Rust compilation.
-FROM --platform=$BUILDPLATFORM alpine:3.22@sha256:d406446bc05b82480756ce8f1287964d28768c23955fa9480d2a74a2eae7a654 AS rtk-builder
+FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS rtk-builder
 ARG TARGETARCH
 RUN apk add --no-cache curl
 WORKDIR /out
@@ -64,7 +64,7 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 
 # Step 3: runner alpine puro: binário Go + dist. A migração do volume legado
 # roda dentro do binário no boot (backend/internal/database/legacy_migration.go).
-FROM node:22-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf AS runner
+FROM node:26-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS runner
 ARG APP_VERSION
 ARG VCS_REF
 WORKDIR /app
