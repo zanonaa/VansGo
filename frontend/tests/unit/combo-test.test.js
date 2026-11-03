@@ -71,7 +71,7 @@ describe("describeAttempt / buildComboTestReport", () => {
     expect(report).toContain("HTTP 429");
   });
 
-  it("notes non-retryable stops in the report", () => {
+  it("notes upstream content-block stops in the report", () => {
     const stopped = normalizeComboTestResponse({ ...PASSED, ok: false, stoppedBy: true, error: "HTTP 400: prompt too long" });
     const report = buildComboTestReport({ combo: { name: "zn-glm" }, result: stopped });
     expect(report).toContain("Stopped");

@@ -86,9 +86,10 @@ func attemptModels(out map[string]any) []string {
 	return models
 }
 
-func TestComboTestFallbackStopsOnNonRetryable400(t *testing.T) {
+func TestComboTestFallbackTraversesOn400(t *testing.T) {
 	handler, probe := newComboTestHandle(t, `{"requireApiKey":true}`)
-	// zn-glm expande para glm/glm-5.3 -> cx/gpt-6.1-sol -> glm/glm-5.3 -> gcli/grok-4.7
+	// Decisão de produto (2026-11-03): 400 não para mais a cadeia — o
+	// fallback segue para o próximo candidato; erro só ao fim.
 	if _, err := handler.DB.Exec(`INSERT INTO combos VALUES('a','zn-glm','llm','["glm/glm-5.3","zn-gpt"]',NULL,'2026','2026');` +
 		`INSERT INTO combos VALUES('b','zn-gpt','llm','["cx/gpt-6.1-sol","gcli/grok-4.7"]',NULL,'2026','2026');`); err != nil {
 		t.Fatal(err)
@@ -104,17 +105,11 @@ func TestComboTestFallbackStopsOnNonRetryable400(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 	out := decodeComboTest(t, w)
-	if ok, _ := out["ok"].(bool); ok {
-		t.Fatalf("headroom: 400 deveria parar a cadeia com falha (stoppedBy)")
+	if ok, _ := out["ok"].(bool); !ok {
+		t.Fatalf("400 do glm deveria cruzar para o codex: %s", w.Body.String())
 	}
-	if stopped, _ := out["stoppedBy"].(bool); !stopped {
-		t.Fatalf("stoppedBy ausente: %v", out)
-	}
-	if got := attemptModels(out); strings.Join(got, ",") != "glm/glm-5.3" {
-		t.Fatalf("400 não retentável parou cedo demais/tarde: %v", got)
-	}
-	if msg := ttsString(out["error"]); !strings.Contains(msg, "prompt too long") {
-		t.Fatalf("mensagem do 400 ausente: %v", msg)
+	if got := attemptModels(out); strings.Join(got, ",") != "glm/glm-5.3,cx/gpt-6.1-sol" {
+		t.Fatalf("ordem %v", got)
 	}
 }
 

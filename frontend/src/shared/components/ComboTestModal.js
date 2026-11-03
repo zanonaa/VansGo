@@ -61,7 +61,7 @@ export default function ComboTestModal({ isOpen, onClose, combo, result, error, 
               <p className="text-xs opacity-80">
                 Strategy <code className="font-mono">{result.strategy || "unknown"}</code>
                 {typeof result.durationMs === "number" ? ` · ${result.durationMs}ms` : ""}
-                {result.stoppedBy ? " · stopped at first non-retryable error" : ""}
+                {result.stoppedBy ? " · stopped at upstream content block" : ""}
               </p>
             </div>
           </div>

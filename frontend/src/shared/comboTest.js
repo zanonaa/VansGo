@@ -80,7 +80,7 @@ export function buildComboTestReport({ combo, result }) {
     lines.push(`- ${describeAttempt(attempt)}`);
   }
   if (result?.stoppedBy) {
-    lines.push("", "Stopped: first non-retryable error (strategy parity with account fallback).");
+    lines.push("", "Stopped: upstream content block (moderation) — cadeia interrompida antes dos outros candidatos.");
   }
   if (result?.error) {
     lines.push("", `Error: ${result.error}`);
