@@ -69,21 +69,42 @@ ARG APP_VERSION
 ARG VCS_REF
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends gosu ca-certificates tzdata wget libgcc-s1 \
+RUN apt-get update && apt-get install -y --no-install-recommends gosu ca-certificates tzdata wget libgcc-s1 python3-venv \
    && rm -rf /var/lib/apt/lists/* \
    && ln -s /usr/sbin/gosu /usr/local/bin/su-exec \
    && groupmod -n app node && usermod -l app -g app node \
    && mkdir -p /app/data && chown -R app:app /app/data
 
+# Headroom embutido (token-saver): mesmo lock com hashes do sidecar oficial
+# (headroom-ai[proxy]==0.41.0 via uv), agora instalado em venv dentro da
+# própria imagem. O supervisor Go (backend/internal/http/handlers/
+# headroom_process.go) spawn/gerencia o proxy no boot — sem sidecar. O
+# processo só existe quando o dashboard liga o toggle: RAM extra só quando
+# ativo, o peso fica no disco da imagem.
 COPY --from=rtk-builder /out/rtk /usr/local/bin/rtk
 COPY --from=rtk-builder /out/LICENSE /usr/share/licenses/rtk/LICENSE
 COPY --from=token-savers /opt/token-savers /opt/token-savers
+COPY docker/headroom/requirements.txt /opt/headroom/requirements.txt
+RUN python3 -m venv /opt/headroom-venv \
+  && /opt/headroom-venv/bin/pip install --no-cache-dir --require-hashes -r /opt/headroom/requirements.txt \
+  && ln -s /opt/headroom-venv/bin/headroom /usr/local/bin/headroom \
+  && test -x /opt/headroom-venv/bin/headroom \
+  && chown -R app:app /opt/headroom-venv /opt/headroom \
+  && rm /opt/headroom/requirements.txt
 COPY --from=go-builder /out/vansgo /app/vansgo
 COPY --from=spa-builder /app/frontend/dist /app/spa
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh /app/vansgo && rtk --version
 
 ENV PXPIPE_PACKAGE_ROOT=/opt/token-savers/node_modules/pxpipe-proxy
+# Paridade das ENV do sidecar oficial: beacon/telemetry desligados e bind
+# sem auth permitido — o proxy gerenciado escuta apenas em loopback do
+# próprio container (nunca publicado), alcançado pelo supervisor Go.
+ENV HEADROOM_ALLOW_UNAUTHENTICATED_BIND=1 \
+    HEADROOM_COMPRESS_ALLOW_REMOTE=1 \
+    HEADROOM_BEACON=off \
+    HEADROOM_TELEMETRY=off \
+    DO_NOT_TRACK=1
 ENV PORT=20128 \
     DATA_DIR=/app/data \
     SPA_DIR=/app/spa \

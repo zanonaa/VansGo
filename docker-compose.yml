@@ -27,7 +27,9 @@ services:
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
-      HEADROOM_URL: http://headroom:8787
+      # Headroom roda dentro desta imagem e o supervisor Go gerencia o proxy
+      # em loopback. Para um headroom EXTERNO, aponte headroomUrl via PATCH
+      # /api/settings (modo EXTERNAL_PROXY) — não há mais serviço sidecar.
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:20128/api/ready"]
       interval: 30s
@@ -35,22 +37,9 @@ services:
       retries: 3
       start_period: 10s
 
-  headroom:
-    profiles: [headroom]
-    image: vansgo-headroom:0.41.0
-    build:
-      context: ./docker/token-savers/headroom
-    container_name: headroom
-    restart: unless-stopped
-    # Compression service is reachable only by containers, never the host.
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /home/headroom/.cache:uid=10001,gid=10001
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+# Headroom tornou-se parte da própria imagem vansgo (venv Python em
+# /opt/headroom-venv). O proxy é spawnado pelo supervisor Go quando o toggle
+# da dashboard está ativo — não há mais serviço/sidecar extra nesta stack.
 
 volumes:
   vansgo-data:

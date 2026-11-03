@@ -37,6 +37,8 @@ type Headroom struct {
 	Status     func(url string) map[string]any
 	// Spawn substitui exec do binário (testes); default spawn discreto.
 	Spawn func(binary string, args []string, logFile string) (int, error)
+	// AvailableExtras injeta o estado {code,ml} (testes); default = pip list.
+	AvailableExtras func() map[string]bool
 }
 
 func (h *Headroom) dir() string         { return h.DataDir + "/headroom" }
@@ -63,6 +65,20 @@ func (h *Headroom) client() *http.Client {
 		return h.Client
 	}
 	return &http.Client{Timeout: headroomHealthTimeout}
+}
+
+// availableExtras devolve {code,ml} do ambiente atual. Ausência de detector
+// ou de python => extras indisponíveis (comportamento determinístico).
+func (h *Headroom) availableExtras() map[string]bool {
+	if h.AvailableExtras != nil {
+		return h.AvailableExtras()
+	}
+	python := h.python()
+	if python == "" {
+		return map[string]bool{"code": false, "ml": false}
+	}
+	_, _, extras := getInstalledHeadroomExtras(python)
+	return extras
 }
 
 func (h *Headroom) readPid() (int, bool) {
@@ -117,6 +133,22 @@ func extrasProxyArgs(codeAware bool, disableKompress bool) []string {
 	return args
 }
 
+// effectiveArgs limita as flags às dependências realmente instaladas no
+// runtime: sem torch não há Kompress (o proxy tenta baixar modelo sem ele) e
+// sem tree-sitter o --code-aware é inerte. Espelha o CMD --disable-kompress
+// fixo do período sidecar; settings de Kompress continuam mandando quando o
+// extra está presente.
+func (h *Headroom) effectiveArgs(codeAware bool, disableKompress bool) []string {
+	extras := h.availableExtras()
+	if codeAware && !extras["code"] {
+		codeAware = false
+	}
+	if !extras["ml"] {
+		disableKompress = true
+	}
+	return extrasProxyArgs(codeAware, disableKompress)
+}
+
 func (h *Headroom) defaultSpawn(binary string, args []string, logFile string) (int, error) {
 	out, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -151,7 +183,7 @@ func (h *Headroom) startHeadroomProxy(port int, codeAware bool, disableKompress 
 	if err := os.MkdirAll(h.dir(), 0o755); err != nil {
 		return 0, false, &headroomError{"SPAWN_FAILED", "Failed to spawn headroom proxy"}
 	}
-	args := append([]string{"proxy", "--port", strconv.Itoa(port)}, extrasProxyArgs(codeAware, disableKompress)...)
+	args := append([]string{"proxy", "--port", strconv.Itoa(port)}, h.effectiveArgs(codeAware, disableKompress)...)
 	spawn := h.Spawn
 	if spawn == nil {
 		spawn = h.defaultSpawn

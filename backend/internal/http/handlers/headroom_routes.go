@@ -18,6 +18,25 @@ func headroomPortOr(url string, fallback int) int {
 	return fallback
 }
 
+// headroomFlagsFrom devolve (url, port, codeAware, disableKompress) a partir
+// das settings; usado tanto pelo handler (request) quanto pelo boot.
+func headroomFlagsFrom(settings map[string]any) (string, int, bool, bool) {
+	value, _ := settings["headroomUrl"].(string)
+	if value == "" {
+		value = defaultHeadroomURL()
+	}
+	port := headroomPortFromURL(value)
+	if port == 0 {
+		port = headroomDefaultPort
+	}
+	codeAware, _ := settings["headroomCodeAware"].(bool)
+	kompress := true
+	if konpressOK, exists := settings["headroomKompress"]; exists && konpressOK == false {
+		kompress = false
+	}
+	return value, port, codeAware, !kompress
+}
+
 func (h HeadroomRoutes) settings(r *http.Request) map[string]any {
 	if h.Read == nil {
 		return map[string]any{}
@@ -30,25 +49,13 @@ func (h HeadroomRoutes) settings(r *http.Request) map[string]any {
 }
 
 func (h HeadroomRoutes) url(r *http.Request) string {
-	value, _ := h.settings(r)["headroomUrl"].(string)
-	if value == "" {
-		value = defaultHeadroomURL()
-	}
+	value, _, _, _ := headroomFlagsFrom(h.settings(r))
 	return value
 }
 
 func (h HeadroomRoutes) flags(r *http.Request) (int, bool, bool) {
-	settings := h.settings(r)
-	port := headroomPortFromURL(h.url(r))
-	if port == 0 {
-		port = headroomDefaultPort
-	}
-	codeAware, _ := settings["headroomCodeAware"].(bool)
-	kompress := true
-	if konpressOK, exists := settings["headroomKompress"]; exists && konpressOK == false {
-		kompress = false
-	}
-	return port, codeAware, !kompress
+	_, port, codeAware, disableKompress := headroomFlagsFrom(h.settings(r))
+	return port, codeAware, disableKompress
 }
 
 func (h HeadroomRoutes) Start(w http.ResponseWriter, r *http.Request) {

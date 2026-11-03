@@ -187,20 +187,23 @@ func NewWithSPA(ready handlers.Readiness, authentication *auth.HTTP, nodes *hand
 		}
 		if len(providerAPI) > 0 && providerAPI[0] != nil && providerAPI[0].Headroom != nil {
 			headroom := providerAPI[0].Headroom
-			r.Get("/api/headroom/status", authentication.LocalOnlyGuard(headroom.Get))
-			r.Head("/api/headroom/status", withoutBody(authentication.LocalOnlyGuard(headroom.Get)))
-			r.Options("/api/headroom/status", authentication.LocalOnlyGuard(options("GET, HEAD, OPTIONS")))
-			r.Post("/api/headroom/start", authentication.LocalOnlyGuard(headroom.Start))
-			r.Options("/api/headroom/start", authentication.LocalOnlyGuard(options("POST, OPTIONS")))
-			r.Post("/api/headroom/stop", authentication.LocalOnlyGuard(headroom.Stop))
-			r.Options("/api/headroom/stop", authentication.LocalOnlyGuard(options("POST, OPTIONS")))
-			r.Post("/api/headroom/restart", authentication.LocalOnlyGuard(headroom.Restart))
-			r.Options("/api/headroom/restart", authentication.LocalOnlyGuard(options("POST, OPTIONS")))
-			r.Get("/api/headroom/extras", authentication.LocalOnlyGuard(headroom.ExtrasGet))
-			r.Head("/api/headroom/extras", withoutBody(authentication.LocalOnlyGuard(headroom.ExtrasGet)))
-			r.Post("/api/headroom/extras", authentication.LocalOnlyGuard(headroom.ExtrasPost))
-			r.Delete("/api/headroom/extras", authentication.LocalOnlyGuard(headroom.ExtrasDelete))
-			r.Options("/api/headroom/extras", authentication.LocalOnlyGuard(options("GET, HEAD, DELETE, OPTIONS, POST")))
+			// O ciclo do headroom é gerenciado pela dashboard em qualquer
+			// origem (paridade do modo nativo da origem): o Middleware geral
+			// já exige sessão ou token CLI; o 403 local-only foi removido.
+			r.Get("/api/headroom/status", headroom.Get)
+			r.Head("/api/headroom/status", withoutBody(headroom.Get))
+			r.Options("/api/headroom/status", options("GET, HEAD, OPTIONS"))
+			r.Post("/api/headroom/start", headroom.Start)
+			r.Options("/api/headroom/start", options("POST, OPTIONS"))
+			r.Post("/api/headroom/stop", headroom.Stop)
+			r.Options("/api/headroom/stop", options("POST, OPTIONS"))
+			r.Post("/api/headroom/restart", headroom.Restart)
+			r.Options("/api/headroom/restart", options("POST, OPTIONS"))
+			r.Get("/api/headroom/extras", headroom.ExtrasGet)
+			r.Head("/api/headroom/extras", withoutBody(headroom.ExtrasGet))
+			r.Post("/api/headroom/extras", headroom.ExtrasPost)
+			r.Delete("/api/headroom/extras", headroom.ExtrasDelete)
+			r.Options("/api/headroom/extras", options("GET, HEAD, DELETE, OPTIONS, POST"))
 		}
 		if len(providerAPI) > 0 && providerAPI[0] != nil && providerAPI[0].Pxpipe != nil {
 			pxpipe := providerAPI[0].Pxpipe

@@ -64,7 +64,9 @@ func TestHeadroomGateAndLifecycle(t *testing.T) {
 	if len(*spawns) != 1 {
 		t.Fatalf("spawn %v", *spawns)
 	}
-	if (*spawns)[0] != "proxy --port 8899 --code-aware --disable-kompress" {
+	// Sem extras instalados (injected FindPython=""), o gate limita: sem
+	// --code-aware (tree-sitter ausente) e com --disable-kompress (sem torch).
+	if (*spawns)[0] != "proxy --port 8899 --disable-kompress" {
 		t.Fatalf("args %v", (*spawns)[0])
 	}
 	w = httptest.NewRecorder()
@@ -94,8 +96,31 @@ func TestHeadroomGateAndLifecycle(t *testing.T) {
 	}
 }
 
-func TestHeadroomExternalURLGate(t *testing.T) {
-	_, routes, spawns := headroomHarness(t, "/bin/fake")
+func TestHeadroomEffectiveArgsGate(t *testing.T) {
+	headroom, routes, spawns := headroomHarness(t, "/tmp/fake-headroom/fake")
+	// settings pedem extras absententes no runtime: flags seguem o que há
+	// instalado, não apenas as opções da UI.
+	headroom.AvailableExtras = func() map[string]bool { return map[string]bool{"code": true, "ml": false} }
+	w := httptest.NewRecorder()
+	routes.Start(w, httptest.NewRequest("POST", "/api/headroom/start", nil))
+	if w.Code != 200 || (*spawns)[len(*spawns)-1] != "proxy --port 8899 --code-aware --disable-kompress" {
+		t.Fatalf("code sim ml não %d %v", w.Code, *spawns)
+	}
+	// ml instalado e settings sem headroomKompress=false (default true):
+	// NENHUM --disable-kompress; code-aware cabe.
+	routes.Read = func(context.Context) (map[string]any, error) {
+		return map[string]any{"headroomCodeAware": true, "headroomUrl": "http://localhost:8899"}, nil
+	}
+	headroom.clearPid()
+	headroom.AvailableExtras = func() map[string]bool { return map[string]bool{"code": false, "ml": true} }
+	w = httptest.NewRecorder()
+	routes.Start(w, httptest.NewRequest("POST", "/api/headroom/start", nil))
+	if w.Code != 200 || (*spawns)[len(*spawns)-1] != "proxy --port 8899" {
+		t.Fatalf("ml sim code não %d %v", w.Code, *spawns)
+	}
+}
+
+func TestHeadroomExternalURLGate(t *testing.T) {	_, routes, spawns := headroomHarness(t, "/bin/fake")
 	routes.Read = func(context.Context) (map[string]any, error) {
 		return map[string]any{"headroomUrl": "https://headroom.remote.example"}, nil
 	}

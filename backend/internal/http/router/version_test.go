@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -62,25 +63,61 @@ func TestVersionUpdateRouteGate(t *testing.T) {
 	}
 }
 
-func TestHeadroomRoutesLocalOnly(t *testing.T) {
+// Paridade do modo nativo da origem: o ciclo do headroom pertence à
+// dashboard (sessão) em qualquer origem; o guard de Middleware geral basta e
+// o 403 local-only foi removido. requireLogin=true → 401 sem sessão; com
+// cookie os handlers respondem normalmente.
+func TestHeadroomRoutesSessionParity(t *testing.T) {
+	t.Setenv("HEADROOM_URL", "")
 	auth, _ := wiredAuth(t)
-	r := NewWithNodes(nil, auth, nil, &handlers.Providers{Headroom: &handlers.HeadroomRoutes{H: &handlers.Headroom{DataDir: t.TempDir()}}})
-	methods := map[string]string{
-		"/api/headroom/status":  "GET",
-		"/api/headroom/start":   "POST",
-		"/api/headroom/stop":    "POST",
-		"/api/headroom/restart": "POST",
-		"/api/headroom/extras":  "GET",
+	auth.Settings = func(context.Context) (map[string]any, error) {
+		return map[string]any{"requireLogin": true}, nil
 	}
-	for path, method := range methods {
+	headroom := &handlers.HeadroomRoutes{
+		H:    &handlers.Headroom{DataDir: t.TempDir(), FindPython: func() string { return "" }},
+		Read: auth.Settings,
+	}
+	r := NewWithNodes(nil, auth, nil, &handlers.Providers{Headroom: headroom})
+	// Sem sessão e requireLogin=true: o Middleware geral nega antes do
+	// handler (deny-by-default para /api/*).
+	for _, path := range []string{"/api/headroom/status", "/api/headroom/start", "/api/headroom/stop", "/api/headroom/restart", "/api/headroom/extras"} {
 		w := httptest.NewRecorder()
-		r.ServeHTTP(w, httptest.NewRequest(method, path, nil))
-		if w.Code != 401 && w.Code != 403 && w.Code != 500 {
-			t.Fatalf("%s %s anon espera guarda local: %d %s", method, path, w.Code, w.Body.String())
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s anon requireLogin=true: %d %s", path, w.Code, w.Body.String())
 		}
 	}
+	// Sessão de dashboard em qualquer origem (era restrita a loopback na era
+	// sidecar): handlers respondem com os contratos reais — sem binário do
+	// CLI neste ambiente, start/restart → 400 NOT_INSTALLED, stop sem pid →
+	// 409, status/extras → 200 e rota desconhecida continua 404.
+	token, _ := auth.Sessions.Create(nil)
+	cookie := &http.Cookie{Name: "auth_token", Value: token}
+	expectations := []struct {
+		method string
+		path   string
+		code   int
+		body   string
+	}{
+		{http.MethodGet, "/api/headroom/status", 200, ""},
+		{http.MethodGet, "/api/headroom/extras", 200, ""},
+		{http.MethodPost, "/api/headroom/start", 400, "NOT_INSTALLED"},
+		{http.MethodPost, "/api/headroom/restart", 400, "NOT_INSTALLED"},
+		{http.MethodPost, "/api/headroom/stop", 409, "not_running"},
+	}
+	for _, expected := range expectations {
+		req := httptest.NewRequest(expected.method, expected.path, nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != expected.code || !strings.Contains(w.Body.String(), expected.body) {
+			t.Fatalf("%s %s: %d %s (esperado %d %q)", expected.method, expected.path, w.Code, w.Body.String(), expected.code, expected.body)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/headroom/nonexistent", nil)
+	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/headroom/nonexistent", nil))
+	r.ServeHTTP(w, req)
 	if w.Code != 404 {
 		t.Fatalf("rota não registrada %d", w.Code)
 	}

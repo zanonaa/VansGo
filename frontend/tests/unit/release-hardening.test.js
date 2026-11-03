@@ -67,7 +67,11 @@ describe("release hardening contracts", () => {
     expect(compose).toContain("vansrouter-data:/migration-data:ro");
     expect(read(".env.example")).toContain("VANSGO_IMAGE=ghcr.io/zanonaa/vansgo:latest");
     expect(compose).toContain("BIND_ADDRESS:-127.0.0.1");
-    expect(compose).toContain("profiles: [headroom]");
+    // Headroom embutido na imagem: não existe mais serviço/sidecar no compose
+    expect(compose).not.toContain("profiles: [headroom]");
+    expect(compose).not.toContain("vansgo-headroom");
+    expect(compose).not.toContain("HEADROOM_URL");
+    expect(read("Dockerfile")).toContain("headroom-venv");
     expect(compose).not.toContain("depends_on:");
   });
 

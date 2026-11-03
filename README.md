@@ -29,8 +29,8 @@ That project's migration could move in two plausible directions over time, and V
 - **Provider identity diagnostics**: per-attempt `opencode_identity` audit (opt-in via `OUTBOUND_AUDIT=true`) to attribute outbound identities without rotating or spoofing anything.
 - **Proxy pools**: HTTP/SOCKS5 pools with health probing and fitness scoring; selection state per connection.
 - **NordVPN tunnels**: userspace WireGuard tunnels persisted in `nordvpnTunnels` (migration v10); startup restores them, and pools go live only after IP verification.
-- **Token savers** (official bundled components): RTK CLI 0.46.0 (`rtk pipe`), Headroom 0.41.0 sidecar, PXPIPE 0.15.1, Ponytail. See `docs/official-token-savers.md`.
-- **Security**: deny-by-default on `/api/*`, JWT HS256 session cookie (HttpOnly), API keys (`sk-…`) for remote LLM routes, `x-9r-cli-token` for the local CLI, `LocalOnlyGuard` for routes that manage host-side processes.
+- **Token savers** (official bundled components): RTK CLI 0.46.0 (`rtk pipe`), Headroom 0.41.0 embedded in the image (Go-managed child process), PXPIPE 0.15.1, Ponytail. See `docs/official-token-savers.md`.
+- **Security**: deny-by-default on `/api/*`, JWT HS256 session cookie (HttpOnly), API keys (`sk-…`) for remote LLM routes, `x-9r-cli-token` for the local CLI, `LocalOnlyGuard` on `/api/auth/reset-password`.
 - **Proactive OAuth maintenance**: tokens refresh ~5 minutes before expiry by a scheduler, reusing the same refresh machinery as manual refresh.
 
 ## Quick start (Docker)
@@ -52,7 +52,7 @@ Alternatively with Compose:
 
 ```bash
 cp .env.example .env && nano .env   # set INITIAL_PASSWORD
-docker compose up -d                # add --profile headroom for the sidecar
+docker compose up -d                # headroom runs inside the image; enable the toggle in the dashboard
 ```
 
 Migrating **from the former VansRouter**: keep your existing data volume and either set `DATA_DIR` to the old path or attach the legacy `vansrouter-data` volume read-only at `/migration-data`. The Go startup migration imports legacy data without discarding the source (see `docs/MIGRATION.md` for the full 9Router procedure).
@@ -100,7 +100,7 @@ For SSE use `"stream": true` and `curl -N`. Other formats and services depend on
 | `SPA_DIR` | Compiled SPA directory; `/app/spa` in the image or `frontend/dist` for local builds. |
 | `INITIAL_PASSWORD` | Initial dashboard password on new installs. Set a strong value. |
 | `JWT_SECRET` / `API_KEY_SECRET` | Auth secrets. When omitted, the app generates and persists them under `DATA_DIR`. Do not use known placeholders in production. |
-| `HEADROOM_URL` | Optional Headroom sidecar endpoint, e.g. `http://headroom:8787`. |
+| `HEADROOM_URL` | Legacy env. Still honored as the default `headroomUrl`; the dashboard setting wins. Embedded Headroom uses `http://localhost:8787`. |
 | `VANSGO_TOOL_GUARD` | Set `off` to disable the Tool Call Guard globally. |
 | `OUTBOUND_AUDIT` | Set `true` to log outbound identity attribution for every attempt (diagnostics). |
 | `NODE_ENV` | Use `production` in deployments to enable production config checks. |

@@ -15,9 +15,12 @@ func isPublicAPIPath(path string) bool {
 	return false
 }
 
-// isLocalOnlyPath reproduz LOCAL_ONLY_PATHS.
+// isLocalOnlyPath reproduz LOCAL_ONLY_PATHS. As rotas de ciclo do headroom
+// (start/stop/proxy) saíram: no runtime embutido elas são gerenciadas pela
+// dashboard com sessão em qualquer origem (modo nativo da origem); o Middleware
+// geral continua exigindo sessão ou token CLI para elas.
 func isLocalOnlyPath(path string) bool {
-	for _, p := range []string{"/api/oauth/cursor/auto-import", "/api/oauth/kiro/auto-import", "/api/oauth/zed/auto-import", "/api/auth/reset-password", "/api/headroom/start", "/api/headroom/stop", "/api/headroom/proxy"} {
+	for _, p := range []string{"/api/oauth/cursor/auto-import", "/api/oauth/kiro/auto-import", "/api/oauth/zed/auto-import", "/api/auth/reset-password"} {
 		if strings.HasPrefix(path, p) {
 			return true
 		}

@@ -11,4 +11,9 @@ chown -R app:app /app/data 2>/dev/null || true
 
 # A migração do volume legado roda dentro do binário no boot.
 
+# $HOME do processo aponta para o DATA_DIR: o proxy headroom (Python,
+# spawnado pelo supervisor Go) grava cache/config em $HOME e, no runner
+# padrão da imagem, /root não é gravável pelo usuário app.
+export HOME="${DATA_DIR:-/app/data}"
+
 exec su-exec app "$@"

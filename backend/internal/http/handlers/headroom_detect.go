@@ -56,13 +56,22 @@ func headroomExtendedPath() string {
 	return strings.Join(extra, string(filepath.ListSeparator))
 }
 
+// embeddedHeadroomBinDir é o venv com hash-lock instalado no estágio de build
+// da imagem (chmod/chown app no Dockerfile). Existir => precedência máxima na
+// detecção, replicando o papel dos EXTRA_BINS empacotados da origem.
+const embeddedHeadroomBinDir = "/opt/headroom-venv/bin"
+
 func extraBinDirs() []string {
-	bins := []string{"/usr/local/bin", "/opt/homebrew/bin",
+	bins := []string{}
+	if _, err := os.Stat(embeddedHeadroomBinDir); err == nil {
+		bins = append(bins, embeddedHeadroomBinDir)
+	}
+	bins = append(bins, "/usr/local/bin", "/opt/homebrew/bin",
 		"/Library/Frameworks/Python.framework/Versions/3.13/bin",
 		"/Library/Frameworks/Python.framework/Versions/3.12/bin",
 		"/Library/Frameworks/Python.framework/Versions/3.11/bin",
 		"/Library/Frameworks/Python.framework/Versions/3.10/bin",
-	}
+	)
 	if home, err := os.UserHomeDir(); err == nil {
 		bins = append(bins, filepath.Join(home, ".local/bin"))
 	}
