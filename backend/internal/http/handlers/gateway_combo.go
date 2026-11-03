@@ -76,34 +76,26 @@ func (c *comboAttempt) finalError() {
 	c.destination.Write(c.failure.Bytes())
 }
 
-// expandComboEntries expande as entradas de um combo. Entradas sem "/" são
-// referência a outro combo (combos aninhados, como a origem resolve em
-// getComboModelsFromData); entradas sem barra que não são combo passam
-// adiante para falharem como model downstream. Ciclos são rejeitados.
-// comboShouldFallback reproduz a política essencial de
-// open-sse/services/accountFallback.js (ERROR_RULES): erros de conta
-// (401/402/403/404/429) e de servidor (5xx) seguem para o próximo model do
-// combo; erros do pedido (400/422/499) e bloqueios de conteúdo param no
-// primeiro — a origem devolve esses últimos ao cliente.
+// comboShouldFallback — decisão de produto (2026-11-03, incidente zn-glm):
+// a estratégia fallback percorre TODOS os candidatos até o fim; só bloqueio
+// de conteúdo do upstream (moderação) encerra a cadeia antecipadamente.
+// Erros de pedido (400/422/499) e de conta (401/402/403/404/429/5xx)
+// contam como "candidato falhou" e a rota segue para o próximo — o erro só
+// chega ao cliente quando a cadeia esgota (status do primeiro + mensagem do
+// último). O 400 do Codex com ChatGPT account (model_not_found) era o motivo
+// final que abortava o combo antes do grok.
 var comboNoFallbackTexts = []string{
 	"content-blocked", "content_blocked", "content exists risk",
 	"sensitive words detected", "sensitive content", "unapproved channel",
 	"illegal api invocation",
 }
 
-func comboShouldFallback(status int, errorText string) bool {
+func comboShouldFallback(_ int, errorText string) bool {
 	lower := strings.ToLower(errorText)
 	for _, text := range comboNoFallbackTexts {
 		if strings.Contains(lower, text) {
 			return false
 		}
-	}
-	// accountFallback.js: erros 4xx sem regra explícita são do pedido e não
-	// devem consumir outro candidato do combo. 401/402/403/404/429 têm regra
-	// própria (fallback) e continuam para o próximo model.
-	if status >= 400 && status < 500 &&
-		status != 401 && status != 402 && status != 403 && status != 404 && status != 429 {
-		return false
 	}
 	return true
 }
@@ -164,6 +156,8 @@ func comboGenericProviderError(message string) bool {
 	return strings.HasPrefix(message, "Provider error: ")
 }
 
+// expandComboEntries expande as entradas de um combo (entradas sem "/" são
+// referência a outro combo); expansão recursiva com proteção de ciclo.
 func (g *Gateway) expandComboEntries(r *http.Request, name string, entries []any) ([]string, error) {
 	models := []string{}
 	var expand func(entry string, depth int, visited map[string]bool) error
@@ -300,8 +294,8 @@ func (g *Gateway) chatCombo(w http.ResponseWriter, r *http.Request, key, body ma
 		}
 		last = attempt
 		if !comboShouldFallback(attempt.status, attempt.failure.String()) {
-			// A origem devolve a resposta do candidato que bloqueou o fallback
-			// (400/422/499 ou conteúdo bloqueado), não a de um anterior.
+			// Cadeia interrompida apenas por conteúdo bloqueado: devolvemos a
+			// resposta do candidato que bloqueou (moderação do upstream).
 			last.finalError()
 			return true
 		}

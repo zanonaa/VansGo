@@ -10,7 +10,7 @@ Backup `9router-backup-2026-10-23T00-57-17-221Z.json` importado num container lo
 4. **Combo aninhado rejeitado** — entradas sem `/` (ex.: `zn-glm → zn-gpt`) davam 400 `Invalid combo model entry`; a origem as resolve como outro combo. Agora expandidas recursivamente com proteção de ciclo (erro `Circular...` explícito).
 5. **`thinking` derrubava resposta Claude/GLM** — bloco `thinking` em resposta não-stream dava 502 `Unsupported Claude content block`. Agora vira `reasoning_content` (fiel a `claude-to-openai`).
 6. **`Content-Type` fixo em SSE no sucesso** — resposta JSON vinha com `text/event-stream`; agora preserva o CT do upstream.
-7. **Fallback do combo parava em 403** — o Go fazia `break` em 400/401/403; a origem (`accountFallback.js`) só para em erros do pedido (400/422/499) e bloqueio de conteúdo. Política reproduzida (`comboShouldFallback`).
+7. **Fallback do combo parava em 403** — o Go fazia `break` em 400/401/403; a origem (`accountFallback.js`) só para em erros do pedido (400/422/499) e bloqueio de conteúdo. Política reproduzida (`comboShouldFallback`). **Emenda 2026-11-03 (incidente zn-glm)**: a decisão de produto revogou a paridade estreita — o fallback percorre TODOS os candidatos até o fim; interrompe apenas em bloqueio de conteúdo do upstream (moderação). Qualquer outro erro (incluindo 400/422/499) conta como falha do candidato e a rota segue para o próximo; o erro só chega ao cliente quando a cadeia se esgota (status do primeiro + mensagem do último). O teste ao vivo mostrou o defeito: glm 429 → fallback → codex 400 `model_not_found` (conta ChatGPT sem entitlement) encerrava a cadeia antes do grok.
 
 ## Resultado final (4/9 combos respondem com texto real)
 
