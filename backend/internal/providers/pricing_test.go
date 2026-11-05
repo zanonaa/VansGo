@@ -16,6 +16,10 @@ func TestFallbackPricingJSParity(t *testing.T) {
 		{"deepseek-flash", 0.15, 0.6},
 		{"deepseek-v4-flash", 0.15, 0.6},
 		{"deepseek-v4-pro", 0.66, 1.98},
+		// Z.AI oficial: docs.z.ai/guides/overview/pricing
+		{"glm-5.3", 1.4, 4.4},
+		{"glm-4.7", 0.6, 2.2},
+		{"glm-4.7-flash", 0, 0},
 	} {
 		price := FallbackPricing(tc.model)
 		if price["input"] != tc.input || price["output"] != tc.output {

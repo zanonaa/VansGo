@@ -660,32 +660,32 @@
       "peakWeekdaysOnly": true
     },
     "glm-4.6": {
-      "input": 0.5,
-      "output": 2,
-      "cached": 0.25,
-      "reasoning": 3,
-      "cache_creation": 0.5
+      "input": 0.6,
+      "output": 2.2,
+      "cached": 0.11,
+      "reasoning": 2.2,
+      "cache_creation": 0.0
     },
     "glm-4.6v": {
-      "input": 0.75,
-      "output": 3,
-      "cached": 0.375,
-      "reasoning": 4.5,
-      "cache_creation": 0.75
+      "input": 0.3,
+      "output": 0.9,
+      "cached": 0.05,
+      "reasoning": 0.9,
+      "cache_creation": 0.0
     },
     "glm-4.7": {
-      "input": 0.75,
-      "output": 3,
-      "cached": 0.375,
-      "reasoning": 4.5,
-      "cache_creation": 0.75
+      "input": 0.6,
+      "output": 2.2,
+      "cached": 0.11,
+      "reasoning": 2.2,
+      "cache_creation": 0.0
     },
     "glm-5": {
-      "input": 1,
-      "output": 4,
-      "cached": 0.5,
-      "reasoning": 6,
-      "cache_creation": 1
+      "input": 1.0,
+      "output": 3.2,
+      "cached": 0.2,
+      "reasoning": 3.2,
+      "cache_creation": 0.0
     },
     "MiniMax-M3": {
       "input": 0.3,
@@ -855,6 +855,125 @@
         }
       ],
       "peakWeekdaysOnly": true
+    },
+    "glm-5.3": {
+      "input": 1.4,
+      "output": 4.4,
+      "cached": 0.26,
+      "reasoning": 4.4,
+      "cache_creation": 0.0
+    },
+    "glm-5.3-flash": {
+      "input": 0.15,
+      "output": 0.5,
+      "cached": 0.03,
+      "reasoning": 0.5,
+      "cache_creation": 0.0
+    },
+    "glm-5.3-flashx": {
+      "input": 0.37,
+      "output": 1.25,
+      "cached": 0.075,
+      "reasoning": 1.25,
+      "cache_creation": 0.0
+    },
+    "glm-5.3-flashx-legal": {
+      "input": 0.37,
+      "output": 1.25,
+      "cached": 0.075,
+      "reasoning": 1.25,
+      "cache_creation": 0.0
+    },
+    "glm-5.2": {
+      "input": 1.4,
+      "output": 4.4,
+      "cached": 0.26,
+      "reasoning": 4.4,
+      "cache_creation": 0.0
+    },
+    "glm-5.1": {
+      "input": 1.4,
+      "output": 4.4,
+      "cached": 0.26,
+      "reasoning": 4.4,
+      "cache_creation": 0.0
+    },
+    "glm-4.5": {
+      "input": 0.6,
+      "output": 2.2,
+      "cached": 0.11,
+      "reasoning": 2.2,
+      "cache_creation": 0.0
+    },
+    "glm-4.7-flashx": {
+      "input": 0.07,
+      "output": 0.4,
+      "cached": 0.01,
+      "reasoning": 0.4,
+      "cache_creation": 0.0
+    },
+    "glm-4.7-flash": {
+      "input": 0.0,
+      "output": 0.0,
+      "cached": 0.0,
+      "reasoning": 0.0,
+      "cache_creation": 0.0
+    },
+    "glm-4.5-flash": {
+      "input": 0.0,
+      "output": 0.0,
+      "cached": 0.0,
+      "reasoning": 0.0,
+      "cache_creation": 0.0
+    },
+    "glm-4.5-x": {
+      "input": 2.2,
+      "output": 8.9,
+      "cached": 0.45,
+      "reasoning": 8.9,
+      "cache_creation": 0.0
+    },
+    "glm-4.5-air": {
+      "input": 0.2,
+      "output": 1.1,
+      "cached": 0.03,
+      "reasoning": 1.1,
+      "cache_creation": 0.0
+    },
+    "glm-4.5-airx": {
+      "input": 1.1,
+      "output": 4.5,
+      "cached": 0.22,
+      "reasoning": 4.5,
+      "cache_creation": 0.0
+    },
+    "glm-4.6v-flashx": {
+      "input": 0.04,
+      "output": 0.4,
+      "cached": 0.004,
+      "reasoning": 0.4,
+      "cache_creation": 0.0
+    },
+    "glm-4.6v-flash": {
+      "input": 0.0,
+      "output": 0.0,
+      "cached": 0.0,
+      "reasoning": 0.0,
+      "cache_creation": 0.0
+    },
+    "glm-4.5v": {
+      "input": 0.6,
+      "output": 1.8,
+      "cached": 0.11,
+      "reasoning": 1.8,
+      "cache_creation": 0.0
+    },
+    "glm-4-32b-0414-128k": {
+      "input": 0.1,
+      "output": 0.1,
+      "cached": 0.0,
+      "reasoning": 0.1,
+      "cache_creation": 0.0
     }
   },
   "patterns": [
@@ -1321,31 +1440,31 @@
     {
       "pattern": "glm-5*",
       "pricing": {
-        "input": 1,
-        "output": 4,
-        "cached": 0.5,
-        "reasoning": 6,
-        "cache_creation": 1
+        "input": 1.4,
+        "output": 4.4,
+        "cached": 0.26,
+        "reasoning": 4.4,
+        "cache_creation": 0.0
       }
     },
     {
       "pattern": "glm-4*",
       "pricing": {
-        "input": 0.75,
-        "output": 3,
-        "cached": 0.375,
-        "reasoning": 4.5,
-        "cache_creation": 0.75
+        "input": 0.6,
+        "output": 2.2,
+        "cached": 0.11,
+        "reasoning": 2.2,
+        "cache_creation": 0.0
       }
     },
     {
       "pattern": "glm-*",
       "pricing": {
-        "input": 0.5,
-        "output": 2,
-        "cached": 0.25,
-        "reasoning": 3,
-        "cache_creation": 0.5
+        "input": 0.6,
+        "output": 2.2,
+        "cached": 0.11,
+        "reasoning": 2.2,
+        "cache_creation": 0.0
       }
     },
     {
