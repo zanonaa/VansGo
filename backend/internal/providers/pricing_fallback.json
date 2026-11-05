@@ -610,18 +610,54 @@
       "cache_creation": 0.14
     },
     "deepseek-v4-flash": {
-      "input": 0.14,
-      "output": 0.28,
-      "cached": 0.0028,
-      "reasoning": 0.28,
-      "cache_creation": 0.14
+      "input": 0.15,
+      "output": 0.6,
+      "cached": 0.003,
+      "reasoning": 0.6,
+      "cache_creation": 0.15,
+      "peak": {
+        "input": 0.3,
+        "output": 1.2,
+        "cached": 0.006,
+        "reasoning": 1.2,
+        "cache_creation": 0.3
+      },
+      "peakWindowsUtc": [
+        {
+          "start": "01:00",
+          "end": "04:00"
+        },
+        {
+          "start": "06:00",
+          "end": "10:00"
+        }
+      ],
+      "peakWeekdaysOnly": true
     },
     "deepseek-v4-pro": {
-      "input": 0.435,
-      "output": 0.87,
-      "cached": 0.003625,
-      "reasoning": 0.87,
-      "cache_creation": 0.435
+      "input": 0.66,
+      "output": 1.98,
+      "cached": 0.022,
+      "reasoning": 1.98,
+      "cache_creation": 0.66,
+      "peak": {
+        "input": 1.32,
+        "output": 3.96,
+        "cached": 0.044,
+        "reasoning": 3.96,
+        "cache_creation": 1.32
+      },
+      "peakWindowsUtc": [
+        {
+          "start": "01:00",
+          "end": "04:00"
+        },
+        {
+          "start": "06:00",
+          "end": "10:00"
+        }
+      ],
+      "peakWeekdaysOnly": true
     },
     "glm-4.6": {
       "input": 0.5,
@@ -769,6 +805,56 @@
       "cached": 0.75,
       "reasoning": 9,
       "cache_creation": 1.5
+    },
+    "deepseek-flash": {
+      "input": 0.15,
+      "output": 0.6,
+      "cached": 0.003,
+      "reasoning": 0.6,
+      "cache_creation": 0.15,
+      "peak": {
+        "input": 0.3,
+        "output": 1.2,
+        "cached": 0.006,
+        "reasoning": 1.2,
+        "cache_creation": 0.3
+      },
+      "peakWindowsUtc": [
+        {
+          "start": "01:00",
+          "end": "04:00"
+        },
+        {
+          "start": "06:00",
+          "end": "10:00"
+        }
+      ],
+      "peakWeekdaysOnly": true
+    },
+    "deepseek-v4-flash-vision-exp": {
+      "input": 0.15,
+      "output": 0.6,
+      "cached": 0.003,
+      "reasoning": 0.6,
+      "cache_creation": 0.15,
+      "peak": {
+        "input": 0.3,
+        "output": 1.2,
+        "cached": 0.006,
+        "reasoning": 1.2,
+        "cache_creation": 0.3
+      },
+      "peakWindowsUtc": [
+        {
+          "start": "01:00",
+          "end": "04:00"
+        },
+        {
+          "start": "06:00",
+          "end": "10:00"
+        }
+      ],
+      "peakWeekdaysOnly": true
     }
   },
   "patterns": [

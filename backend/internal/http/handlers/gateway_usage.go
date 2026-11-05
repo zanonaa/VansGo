@@ -469,7 +469,7 @@ func (g *Gateway) finishUsage(r *http.Request, u *requestUsage) {
 		}
 		price, _ := providerPrices[u.model].(map[string]any)
 		if price == nil {
-			price = providers.FallbackPricing(u.model)
+			price = providers.FallbackPricingAt(u.model, u.started)
 		}
 		input, output := pxpipeNum(price["input"]), pxpipeNum(price["output"])
 		cached, creation := pxpipeNum(u.tokens["cached_tokens"]), pxpipeNum(u.tokens["cache_creation_input_tokens"])

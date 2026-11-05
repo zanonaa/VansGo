@@ -27,6 +27,9 @@ services:
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
+      # Fuso usado nos cortes de dia do dashboard/uso diário. Sem isto o
+      # container roda em UTC e o "hoje" vira 21:00 no horário de Brasília.
+      TZ: ${TZ:-America/Sao_Paulo}
       # Headroom roda dentro desta imagem e o supervisor Go gerencia o proxy
       # em loopback. Para um headroom EXTERNO, aponte headroomUrl via PATCH
       # /api/settings (modo EXTERNAL_PROXY) — não há mais serviço sidecar.
