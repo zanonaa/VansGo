@@ -270,7 +270,7 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 	}
 	// Teto de saída por provider (z.ai rejeita >131072 com 400; o opencode
 	// pede 256000 por padrão). Aplicado no corpo final, qualquer formato.
-	if capped := providers.ClampMaxOutputTokens(provider, firstNonEmpty(body["max_tokens"], body["maxOutputTokens"], body["max_completion_tokens"])); capped != nil {
+	if capped := providers.ClampMaxOutputTokens(provider, model, firstNonEmpty(body["max_tokens"], body["maxOutputTokens"], body["max_completion_tokens"])); capped != nil {
 		body["max_tokens"] = capped
 		if _, ok := body["maxOutputTokens"]; ok {
 			body["maxOutputTokens"] = capped

@@ -91,17 +91,22 @@ func translateTarget(body map[string]any, format, model string) (map[string]any,
 	}
 	result := map[string]any{}
 	if format == "claude" {
-		result = map[string]any{"model": model, "messages": turns, "stream": source["stream"] != false, "max_tokens": 1024}
+		// Anthropic exige max_tokens; sem pedido do cliente o valor entra no
+		// gateway via clamp (teto do modelo). O 1024 fixo cortava respostas
+		// longas com finish_reason=length.
+		result = map[string]any{"model": model, "messages": turns, "stream": source["stream"] != false}
+		if value, ok := source["max_tokens"]; ok {
+			result["max_tokens"] = value
+		} else if value, ok := source["max_completion_tokens"]; ok {
+			result["max_tokens"] = value
+		}
 		if len(system) > 0 {
 			result["system"] = system
 		}
-		for _, key := range []string{"max_tokens", "temperature", "top_p", "top_k", "metadata", "thinking"} {
+		for _, key := range []string{"temperature", "top_p", "top_k", "metadata", "thinking"} {
 			if value, ok := source[key]; ok {
 				result[key] = value
 			}
-		}
-		if value, ok := source["max_completion_tokens"]; ok {
-			result["max_tokens"] = value
 		}
 		if stop, ok := source["stop"]; ok {
 			if text, ok := stop.(string); ok {
