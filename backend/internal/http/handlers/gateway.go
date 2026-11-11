@@ -254,6 +254,11 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.Send.SendDeepSeekWeb(w, r, provider, model, body, source, stream)
 		return
 	}
+	// Muse Spark Web (meta.ai) fala DGW/WebSocket com protobuf por baixo.
+	if format == "muse-spark-web" {
+		g.Send.SendMuseSparkWeb(w, r, provider, model, body, source, stream)
+		return
+	}
 	if provider == "" {
 		g.webError(w, 400, "Invalid model: use provider/model")
 		return

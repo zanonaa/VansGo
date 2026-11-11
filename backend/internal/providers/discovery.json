@@ -539,12 +539,6 @@
     "authHeader": "x-api-key",
     "authPrefix": ""
   },
-  "muse-spark-web": {
-    "url": "https://www.meta.ai/api/graphql/models",
-    "public": false,
-    "authHeader": "Authorization",
-    "authPrefix": "Bearer "
-  },
   "a6api": {
     "url": "https://a6api.com/v1/models",
     "public": false,
