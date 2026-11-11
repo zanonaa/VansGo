@@ -254,7 +254,7 @@ func (t *TranslatorSend) sendDeepSeekWeb(w http.ResponseWriter, r *http.Request,
 			message["reasoning_content"] = think
 		}
 		if len(toolCalls) > 0 {
-			message["tool_calls"] = toolCalls
+			message["tool_calls"] = openAIToolCalls(toolCalls)
 		}
 		nodeReply(w, 200, map[string]any{
 			"id":      fmt.Sprintf("chatcmpl-deepseek-%d", time.Now().UnixNano()),

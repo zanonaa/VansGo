@@ -198,11 +198,12 @@ func TestKimiWebSendE2EToolChain(t *testing.T) {
 	}
 	calls := choice["message"].(map[string]any)["tool_calls"].([]any)
 	call := calls[0].(map[string]any)
-	if call["name"] != "list_files" {
+	function, _ := call["function"].(map[string]any)
+	if call["type"] != "function" || function["name"] != "list_files" {
 		t.Fatalf("tool call: %v", call)
 	}
-	if call["arguments"] != `{"path":"/tmp/opencode"}` {
-		t.Fatalf("arguments: %v", call["arguments"])
+	if function["arguments"] != `{"path":"/tmp/opencode"}` {
+		t.Fatalf("arguments: %v", function["arguments"])
 	}
 	// Contrato com nonce foi parado no fim da última user message.
 	prompt := kimiWebPrompt(t, upstream)
@@ -272,10 +273,10 @@ func TestKimiWebSendE2ERefreshOn401(t *testing.T) {
 	refreshed := ""
 	send := &TranslatorSend{
 		Connections: sendConnections{[]map[string]any{{
-			"id":          "conn-kimi",
-			"provider":    "kimi-web",
-			"isActive":    true,
-			"apiKey":      "token-velho",
+			"id":           "conn-kimi",
+			"provider":     "kimi-web",
+			"isActive":     true,
+			"apiKey":       "token-velho",
 			"refreshToken": "refresh-fake",
 		}}},
 		Client: &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {
