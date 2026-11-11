@@ -58,7 +58,7 @@ func TestNodeMutationsPropagateConnections(t *testing.T) {
 	if err = json.Unmarshal(listResponse.Body.Bytes(), &listing); err != nil {
 		t.Fatal(err)
 	}
-	if listResponse.Code != 200 || len(listing.Connections) != 2 || len(listing.Providers) != 160 {
+	if listResponse.Code != 200 || len(listing.Connections) != 2 || len(listing.Providers) != 161 {
 		t.Fatalf("providers list: %d %s", listResponse.Code, listResponse.Body.String())
 	}
 	for _, connection := range listing.Connections {

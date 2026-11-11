@@ -84,6 +84,59 @@ func (t *TranslatorSend) refreshConnectionOnce(ctx context.Context, provider str
 	return patch, nil
 }
 
+// kimiWebRefreshPatch implementa o refresh do www.kimi.ai (HAR 2026-11):
+// POST JSON {"refresh_token": ...} em auth.kimi.ai; a resposta rotaciona
+// access (~15min) e refresh (~90d) em camelCase, sem api_key.
+func kimiWebRefreshPatch(ctx context.Context, base *http.Client, provider string, connection map[string]any, lookup connectionPoolLookup) (map[string]any, error) {
+	refresh := ttsString(connection["refreshToken"])
+	if strings.TrimSpace(refresh) == "" {
+		return nil, nil
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, "POST", kimiWebAuthURL+"/api/account.gateway.v1.AuthService/RefreshToken", strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, refresh)))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "*/*")
+	request.Header.Set("connect-protocol-version", "1")
+	request.Header.Set("Origin", kimiWebBaseURL)
+	request.Header.Set("Referer", kimiWebBaseURL+"/")
+	request.Header.Set("User-Agent", kimiWebUA)
+	metadata, _ := connection["providerSpecificData"].(map[string]any)
+	client, relay, cleanup, err := connectionHTTP(requestCtx, metadata, lookup, base)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	if err := rewriteConnectionRelay(request, relay); err != nil {
+		return nil, err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		return nil, nil
+	}
+	var tokens map[string]any
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&tokens); err != nil {
+		return nil, err
+	}
+	access := ttsString(firstNonEmpty(tokens["accessToken"], tokens["access_token"]))
+	if strings.TrimSpace(access) == "" {
+		return nil, nil
+	}
+	patch := map[string]any{"accessToken": access, "lastRefreshAt": time.Now().UTC().Format("2006-01-02T15:04:05.000Z")}
+	if rotated := ttsString(firstNonEmpty(tokens["refreshToken"], tokens["refresh_token"])); rotated != "" {
+		patch["refreshToken"] = rotated
+	}
+	return patch, nil
+}
+
 // oauthRefreshPatch executa o protocolo de refresh do provider e devolve o
 // patch de credenciais, sem persistir. Compartilhado entre o envio do gateway e
 // as telas de usage, que na origem também renovam antes de consultar a API.
@@ -94,6 +147,8 @@ func oauthRefreshPatch(ctx context.Context, base *http.Client, provider string, 
 	}
 	switch provider {
 	case "claude", "codex", "gemini-cli", "antigravity", "qwen", "grok-cli", "gcli", "xai":
+	case "kimi-web":
+		return kimiWebRefreshPatch(ctx, base, provider, connection, lookup)
 	default:
 		return nil, nil
 	}

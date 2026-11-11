@@ -118,5 +118,6 @@
   "atria": "openai",
   "agnes": "openai",
   "bai": "openai",
-  "muse": "openai"
+  "muse": "openai",
+  "kimi-web": "kimi-web"
 }
