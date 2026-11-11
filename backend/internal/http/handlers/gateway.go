@@ -249,6 +249,11 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.Send.SendKimiWeb(w, r, provider, model, body, source, stream)
 		return
 	}
+	// DeepSeek Web (chat.deepseek.com) usa SSE com proof-of-work por request.
+	if format == "deepseek-web" {
+		g.Send.SendDeepSeekWeb(w, r, provider, model, body, source, stream)
+		return
+	}
 	if provider == "" {
 		g.webError(w, 400, "Invalid model: use provider/model")
 		return

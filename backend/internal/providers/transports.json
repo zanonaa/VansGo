@@ -1045,5 +1045,12 @@
     "headers": {},
     "auth": null,
     "noAuth": false
+  },
+  "deepseek-web": {
+    "baseUrl": "https://chat.deepseek.com/api/v0/chat/completion",
+    "format": "deepseek-web",
+    "headers": {},
+    "auth": null,
+    "noAuth": false
   }
 }
