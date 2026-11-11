@@ -14,7 +14,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isXaiApiKey = provider === "xai" && !isCookie;
   const credentialLabel = isCookie ? "Cookie Value" : "API Key";
   const credentialPlaceholder = isCookie
-    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
+    ? (provider === "grok-web"
+        ? "sso=xxxxx... or just the raw value"
+        : provider === "deepseek-web"
+          ? "64-char Bearer token from chat.deepseek.com (Authorization header)"
+          : provider === "muse-spark-web"
+            ? "full Cookie header from www.meta.ai (needs ecto_1_sess)"
+            : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : "");
 
   const isAzure = provider === "azure";
