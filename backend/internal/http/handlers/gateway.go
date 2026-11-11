@@ -244,6 +244,11 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.Send.SendCommandCode(w, r, provider, model, body, source, stream)
 		return
 	}
+	// Kimi Web (www.kimi.ai) fala Connect-RPC com tool shim no prompt.
+	if format == "kimi-web" {
+		g.Send.SendKimiWeb(w, r, provider, model, body, source, stream)
+		return
+	}
 	if provider == "" {
 		g.webError(w, 400, "Invalid model: use provider/model")
 		return

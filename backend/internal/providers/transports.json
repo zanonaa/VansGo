@@ -1038,5 +1038,12 @@
       ]
     },
     "noAuth": false
+  },
+  "kimi-web": {
+    "baseUrl": "https://www.kimi.ai/apiv2/kimi.gateway.chat.v1.ChatService/Chat",
+    "format": "kimi-web",
+    "headers": {},
+    "auth": null,
+    "noAuth": false
   }
 }

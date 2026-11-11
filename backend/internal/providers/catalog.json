@@ -2166,5 +2166,18 @@
     "noAuth": false,
     "serviceKinds": [],
     "authModes": []
+  },
+  {
+    "id": "kimi-web",
+    "category": "webCookie",
+    "alias": "kimi-web",
+    "aliases": [
+      "kimi-web"
+    ],
+    "name": "Kimi Web (Subscription)",
+    "displayName": "kimi-web",
+    "noAuth": false,
+    "serviceKinds": [],
+    "authModes": []
   }
 ]

@@ -240,6 +240,11 @@ func ollamaCompletion(body map[string]any, model string) map[string]any {
 	}
 }
 
+// SendKimiWeb expõe o executor Connect-RPC do www.kimi.ai ao gateway e ao node.
+func (t *TranslatorSend) SendKimiWeb(w http.ResponseWriter, r *http.Request, provider, model string, body map[string]any, source string, stream bool) {
+	t.sendKimiWeb(w, r, provider, model, body, source, stream)
+}
+
 // SendOllama executa /api/chat (NDJSON) e converte para SSE/JSON OpenAI.
 // O gateway decide o target pelo provider; aqui o corpo já foi traduzido.
 func (t *TranslatorSend) SendOllama(w http.ResponseWriter, r *http.Request, provider, model string, body map[string]any, source string, stream bool) {
