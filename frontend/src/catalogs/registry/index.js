@@ -124,6 +124,7 @@ import p121 from "./youcom.js";
 import p122 from "./zcode.js";
 import p123 from "./muse-spark-web.js";
 import p123z from "./kimi-web.js";
+import p123y from "./deepseek-web.js";
 import p124 from "./a6api.js";
 import p125 from "./alims-intl.js";
 import p126 from "./zenmux.js";
@@ -294,6 +295,7 @@ export default [
   p122,
   p123,
   p123z,
+  p123y,
   p124,
   p125,
   p126,

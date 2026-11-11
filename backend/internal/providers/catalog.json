@@ -2179,5 +2179,18 @@
     "noAuth": false,
     "serviceKinds": [],
     "authModes": []
+  },
+  {
+    "id": "deepseek-web",
+    "category": "webCookie",
+    "alias": "deepseek-web",
+    "aliases": [
+      "ds-web"
+    ],
+    "name": "DeepSeek Web (Subscription)",
+    "displayName": "deepseek-web",
+    "noAuth": false,
+    "serviceKinds": [],
+    "authModes": []
   }
 ]

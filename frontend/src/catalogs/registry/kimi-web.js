@@ -14,12 +14,12 @@ export default {
     website: "https://www.kimi.ai",
   },
   category: "webCookie",
-  authType: "apikey",
-  authHint: "Paste the access_token value from www.kimi.ai localStorage (refresh_token goes in the connection's refreshToken field)",
+  authType: "cookie",
+  authHint: "Paste the access_token value from www.kimi.ai (refresh_token goes in the connection's refreshToken field)",
   transport: {
     baseUrl: "https://www.kimi.ai/apiv2/kimi.gateway.chat.v1.ChatService/Chat",
     format: "kimi-web",
-    authType: "apikey",
+    authType: "cookie",
   },
   models: [
     { id: "k3", name: "Kimi K3" },

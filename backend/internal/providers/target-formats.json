@@ -119,5 +119,6 @@
   "agnes": "openai",
   "bai": "openai",
   "muse": "openai",
-  "kimi-web": "kimi-web"
+  "kimi-web": "kimi-web",
+  "deepseek-web": "deepseek-web"
 }
