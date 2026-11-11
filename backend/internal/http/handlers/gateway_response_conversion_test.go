@@ -51,6 +51,7 @@ func TestConvertClaudeResponsePreservesToolCallsAndUsage(t *testing.T) {
 func TestResponsesStreamConvertsGemini(t *testing.T) {
 	g := gatewayModelsFixture(t)
 	g.DB.Exec(`UPDATE settings SET data='{"requireApiKey":false}'`)
+	g.DB.Exec(`INSERT INTO providerConnections VALUES('gm','gemini','apikey',NULL,NULL,1,1,'{}','now','now')`)
 	g.Send = &TranslatorSend{
 		Connections: sendConnections{items: []map[string]any{{"isActive": true, "apiKey": "upstream"}}},
 		Client: &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {

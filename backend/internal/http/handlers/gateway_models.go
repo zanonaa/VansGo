@@ -82,8 +82,19 @@ func (g *Gateway) enabledModelProviders(r *http.Request) (map[string]bool, error
 	return enabled, nil
 }
 
-func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+// modelVisibleToKey replica o isModelAllowed da origem (allowedModels.js):
+// a lista é GLOBAL (providers com conexão ativa + noAuth), não filtrada pela
+// chave — 404 quando o provider não tem conexão ativa, igual à origem.
+// O bloqueio por chave fica no providerAllowed/chatCombo, por campo.
+func (g *Gateway) modelVisibleToKey(r *http.Request, provider string) (bool, error) {
+	enabled, err := g.enabledModelProviders(r)
+	if err != nil {
+		return false, err
+	}
+	return enabled[provider], nil
+}
+
+func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {	w.Header().Set("Access-Control-Allow-Origin", "*")
 	key, ok := g.modelAuth(w, r)
 	if !ok {
 		return

@@ -55,7 +55,8 @@ func TestOpenAIChatResolvesProviderNodePrefix(t *testing.T) {
 	g := gatewayModelsFixture(t)
 	if _, err := g.DB.Exec(`UPDATE settings SET data='{"requireApiKey":false}';
 		CREATE TABLE providerNodes(id TEXT PRIMARY KEY,type TEXT,name TEXT,data TEXT,createdAt TEXT,updatedAt TEXT);
-		INSERT INTO providerNodes VALUES('openai-compatible-chat-dahl','openai-compatible','Dahl','{"prefix":"da"}','now','now');`); err != nil {
+		INSERT INTO providerNodes VALUES('openai-compatible-chat-dahl','openai-compatible','Dahl','{"prefix":"da"}','now','now');
+		INSERT INTO providerConnections VALUES('dahl','openai-compatible-chat-dahl','apikey',NULL,NULL,1,1,'{}','now','now');`); err != nil {
 		t.Fatal(err)
 	}
 	nodeID := "openai-compatible-chat-dahl"

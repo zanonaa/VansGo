@@ -175,6 +175,20 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.webError(w, 403, `Provider "`+provider+`" is not allowed for this API key`)
 		return
 	}
+	// ACL final da origem (chat.js → isModelAllowed): o modelo precisa estar
+	// na lista global de modelos disponíveis (provider com conexão ativa ou
+	// noAuth). 404 igual à origem quando o provider não está served.
+	if provider != "" {
+		visible, err := g.modelVisibleToKey(r, provider)
+		if err != nil {
+			g.webError(w, 500, err.Error())
+			return
+		}
+		if !visible {
+			g.webError(w, 404, `Model "`+modelID+`" is not available. Only models listed in /v1/models can be used.`)
+			return
+		}
+	}
 	if provider != "" {
 		// requestDetails: corpo do cliente em bruto (clientRaw) — body é
 		// mutado pela tradução adiante; detailID/started alimentam a aba.

@@ -39,7 +39,8 @@ func TestOpenAIChatUsesResolvedProvider(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer secret")
 	w = httptest.NewRecorder()
 	gateway.OpenAIChat(w, request)
-	if w.Code != 400 || !strings.Contains(w.Body.String(), "No active connection") {
+	// isModelAllowed da origem: provider sem conexão ativa → 404 antes da tradução.
+	if w.Code != 404 || !strings.Contains(w.Body.String(), "Only models listed in /v1/models") {
 		t.Fatalf("non-openai %d", w.Code)
 	}
 }
