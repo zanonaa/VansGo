@@ -815,7 +815,7 @@
     "noAuth": false
   },
   "muse-spark-web": {
-    "baseUrl": "https://www.meta.ai/api/graphql",
+    "baseUrl": "https://www.meta.ai/",
     "format": "muse-spark-web",
     "headers": {},
     "auth": null,
