@@ -181,7 +181,7 @@ func (t *TranslatorSend) sendKimiWeb(w http.ResponseWriter, r *http.Request, pro
 			message["reasoning_content"] = think
 		}
 		if len(toolCalls) > 0 {
-			message["tool_calls"] = toolCalls
+			message["tool_calls"] = openAIToolCalls(toolCalls)
 		}
 		nodeReply(w, 200, map[string]any{
 			"id":      fmt.Sprintf("chatcmpl-kimi-%d", time.Now().UnixNano()),
@@ -337,7 +337,7 @@ func kimiWebDelta(payload []byte) (string, string, bool) {
 		Op    string `json:"op"`
 		Mask  string `json:"mask"`
 		Block struct {
-			Text  struct {
+			Text struct {
 				Content string `json:"content"`
 			} `json:"text"`
 			Think struct {
@@ -529,7 +529,7 @@ func parseKimiWebToolCalls(text, nonce string) (string, []any) {
 	}
 	calls := []any{}
 	accepted := [][2]int{}
-	for _, tag := range []struct{ open, close string }{	{"<tool>", "</tool>"},
+	for _, tag := range []struct{ open, close string }{{"<tool>", "</tool>"},
 		{"<tool_call>", "</tool_call>"},
 	} {
 		rest := text
@@ -564,6 +564,17 @@ func parseKimiWebToolCalls(text, nonce string) (string, []any) {
 	}
 	stripped.WriteString(text[last:])
 	return stripped.String(), calls
+}
+
+// openAIToolCalls embrulha as chamadas do shim no shape OpenAI (id/type/function).
+func openAIToolCalls(calls []any) []any {
+	wrapped := make([]any, 0, len(calls))
+	for index, call := range calls {
+		wrapped = append(wrapped, map[string]any{
+			"index": index, "id": fmt.Sprintf("call_%d", index), "type": "function", "function": call,
+		})
+	}
+	return wrapped
 }
 
 func kimiWebParseToolJSON(raw, nonce string, index int) (map[string]any, bool) {

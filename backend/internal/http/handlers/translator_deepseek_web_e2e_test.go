@@ -249,7 +249,8 @@ func TestDeepSeekWebSendE2EToolChain(t *testing.T) {
 		t.Fatalf("finish: %v — body: %s", choice["finish_reason"], w.Body.String())
 	}
 	call := choice["message"].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)
-	if call["name"] != "list_files" || call["arguments"] != `{"path":"/tmp/opencode"}` {
+	function, _ := call["function"].(map[string]any)
+	if call["type"] != "function" || function["name"] != "list_files" || function["arguments"] != `{"path":"/tmp/opencode"}` {
 		t.Fatalf("tool call: %v", call)
 	}
 	if !strings.Contains(upstream.prompt, "liste /tmp/opencode") || !strings.Contains(upstream.prompt, "<tool>") {
