@@ -52,7 +52,7 @@ func cookieProbeDo(ctx context.Context, client *http.Client, request *http.Reque
 }
 
 // cookieProbeDeepSeek pede um proof-of-work: prova o Bearer token sem gastar
-// uma mensagem de chat.
+// uma mensagem de chat. Rejeição chega como HTTP 200 com code!=0 no corpo.
 func cookieProbeDeepSeek(ctx context.Context, client *http.Client, token string) error {
 	payload, _ := json.Marshal(map[string]any{"target_path": "/api/v0/chat/completion"})
 	request, err := http.NewRequestWithContext(ctx, "POST", "https://chat.deepseek.com/api/v0/chat/create_pow_challenge", bytes.NewReader(payload))
@@ -62,8 +62,18 @@ func cookieProbeDeepSeek(ctx context.Context, client *http.Client, token string)
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("User-Agent", cookieProbeChromeUA)
-	_, err = cookieProbeDo(ctx, client, request)
-	return err
+	body, err := cookieProbeDo(ctx, client, request)
+	if err != nil {
+		return err
+	}
+	var raw struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if json.Unmarshal(body, &raw) == nil && raw.Code != 0 {
+		return fmt.Errorf("DeepSeek rejected the token: %s", strings.TrimSpace(raw.Msg))
+	}
+	return nil
 }
 
 // cookieProbeKimi reusa o executor Connect-RPC com um turno mínimo "ping".
@@ -184,8 +194,16 @@ func cookieProbePerplexity(ctx context.Context, client *http.Client, token strin
 	request.Header.Set("X-App-ApiClient", "default")
 	request.Header.Set("X-App-ApiVersion", "2.18")
 	request.Header.Set("Cookie", "__Secure-next-auth.session-token="+token)
-	_, err = cookieProbeDo(ctx, client, request)
-	return err
+	body, err := cookieProbeDo(ctx, client, request)
+	if err != nil {
+		// De IP de datacenter o Cloudflare responde challenge antes de avaliar
+		// o cookie: mensagem dedicada em vez de "cookie inválido".
+		if probe, ok := err.(cookieProbeError); ok && probe.status == 403 && claudeWebIsChallenge(403, "", string(body)) {
+			return fmt.Errorf("Cloudflare challenge on perplexity.ai — validate from a browser IP or paste the cookie with cf_clearance")
+		}
+		return err
+	}
+	return nil
 }
 
 // claudeWebNormalizeCookie aceita o valor cru do sessionKey ou um header

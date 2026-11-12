@@ -143,6 +143,16 @@ func TestWebCookieProbeRoutes(t *testing.T) {
 		t.Fatalf("probe errado: %s %s", seenPath, seenAuth)
 	}
 
+	// deepseek-web: code!=0 no corpo (HTTP 200) vira cookie rejeitado.
+	probe = &ProviderValidation{Client: &http.Client{Transport: kiroImportTransport(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"code":40003,"msg":"Authorization Failed (invalid token)"}`))}, nil
+	})}}
+	w = httptest.NewRecorder()
+	probe.Post(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"provider":"deepseek-web","apiKey":"tok"}`)))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Authorization Failed") {
+		t.Fatalf("deepseek body code: %d %s", w.Code, w.Body.String())
+	}
+
 	// kimi-web: cookie rejeitado vira mensagem específica, não 502.
 	probe = &ProviderValidation{Client: &http.Client{Transport: kiroImportTransport(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
