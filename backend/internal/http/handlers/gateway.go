@@ -278,6 +278,16 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.Send.SendClaudeWeb(w, r, provider, model, body, source, stream)
 		return
 	}
+	// Perplexity Web fala SSE em perplexity_ask com cookie de sessão NextAuth.
+	if format == "perplexity-web" {
+		g.Send.SendPerplexityWeb(w, r, provider, model, body, source, stream)
+		return
+	}
+	// Grok Web fala NDJSON em conversations/new com cookie sso.
+	if format == "grok-web" {
+		g.Send.SendGrokWeb(w, r, provider, model, body, source, stream)
+		return
+	}
 	if provider == "" {
 		g.webError(w, 400, "Invalid model: use provider/model")
 		return

@@ -254,9 +254,9 @@ func decodeGrokCredits(raw []byte) (*grokCredits, error) {
 	}
 	ratio, ok := nested[1].(float64)
 	if !ok || math.IsNaN(ratio) || ratio < 0 {
-		// shortcut: upstream dropped the ratio field for unified-billing accounts,
-		// return no quota instead of an error so the UI shows the fallback message
-		return nil, nil
+		// proto3 omission: contas unified-billing omitem o ratio quando nada
+		// foi usado; a origem trata ausência como 0% (não como erro).
+		ratio = 0
 	}
 	var reset any
 	if timestamp, ok := nested[5].([]byte); ok {
