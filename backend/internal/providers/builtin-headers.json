@@ -35,6 +35,7 @@
     "X-Stainless-Os": "MacOS",
     "X-Stainless-Timeout": "600"
   },
+  "claude-web": {},
   "cline": {
     "HTTP-Referer": "https://cline.bot",
     "X-Title": "Cline"

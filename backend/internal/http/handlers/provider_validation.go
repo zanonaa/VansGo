@@ -19,6 +19,13 @@ type ProviderValidation struct {
 	Nodes  NodeStore
 }
 
+func (p *ProviderValidation) clientOr(base *http.Client) *http.Client {
+	if p.Client != nil {
+		return p.Client
+	}
+	return base
+}
+
 func (p *ProviderValidation) do(ctx context.Context, method, url string, headers map[string]string, body []byte) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
@@ -66,6 +73,14 @@ func (p *ProviderValidation) Post(w http.ResponseWriter, r *http.Request) {
 	case "gemini":
 		status, probeErr = p.do(r.Context(), "GET", "https://generativelanguage.googleapis.com/v1/models?key="+key, nil, nil)
 	default:
+		if isWebCookieProvider(provider) {
+			if probeErr = webCookieProbe(r.Context(), p.clientOr(http.DefaultClient), provider, key); probeErr != nil {
+				status = 0
+			} else {
+				status = 200
+			}
+			break
+		}
 		config := providers.Discovery(provider)
 		if config == nil || config.URL == "" {
 			nodeReply(w, 400, map[string]any{"error": fmt.Sprintf("Provider validation unavailable: %s", provider), "valid": false})
@@ -81,6 +96,14 @@ func (p *ProviderValidation) Post(w http.ResponseWriter, r *http.Request) {
 		status, probeErr = p.do(r.Context(), "GET", config.URL, map[string]string{header: prefix + key}, nil)
 	}
 	if probeErr != nil {
+		if isWebCookieProvider(provider) {
+			message := webCookieProbeError(provider)
+			if !isCookieProbeRejected(probeErr) {
+				message = probeErr.Error()
+			}
+			nodeReply(w, 200, map[string]any{"valid": false, "error": message, "providerSpecificData": data})
+			return
+		}
 		nodeReply(w, 502, map[string]any{"error": probeErr.Error(), "valid": false})
 		return
 	}
@@ -95,3 +118,13 @@ func (p *ProviderValidation) Post(w http.ResponseWriter, r *http.Request) {
 	nodeReply(w, 200, map[string]any{"valid": valid, "error": errorText, "providerSpecificData": data})
 }
 func providersNormalize(value string) string { return strings.TrimSpace(strings.ToLower(value)) }
+
+// isWebCookieProvider lista os providers de cookie com sonda própria; o
+// fallback genérico do discovery não serve para nenhum deles.
+func isWebCookieProvider(provider string) bool {
+	switch provider {
+	case "deepseek-web", "kimi-web", "muse-spark-web", "grok-web", "perplexity-web", "claude-web":
+		return true
+	}
+	return false
+}

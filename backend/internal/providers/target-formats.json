@@ -15,6 +15,7 @@
   "cerebras": "openai",
   "chutes": "openai",
   "claude": "claude",
+  "claude-web": "claude-web",
   "cline": "openai",
   "clinepass": "openai",
   "cloudflare-ai": "openai",

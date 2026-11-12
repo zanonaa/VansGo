@@ -273,6 +273,11 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.Send.SendMuseSparkWeb(w, r, provider, model, body, source, stream)
 		return
 	}
+	// Claude Web (claude.ai) fala SSE estilo Anthropic com cookie sessionKey.
+	if format == "claude-web" {
+		g.Send.SendClaudeWeb(w, r, provider, model, body, source, stream)
+		return
+	}
 	if provider == "" {
 		g.webError(w, 400, "Invalid model: use provider/model")
 		return

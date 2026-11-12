@@ -48,6 +48,37 @@ func (p *ConnectionProbe) Test(ctx context.Context, id string) (map[string]any, 
 	case "gitlab":
 		target = "https://gitlab.com/api/v4/user"
 	}
+	if isWebCookieProvider(provider) {
+		// Botão Teste usa a mesma sonda de cookie do cadastro (o caminho
+		// genérico do discovery aponta para URLs que não validam a sessão).
+		client, _, cleanup, err := connectionHTTP(ctx, metadata, p.GetPool, p.Client)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+		started := time.Now()
+		message := any(nil)
+		valid := false
+		if probeErr := webCookieProbe(ctx, client, provider, token); probeErr != nil {
+			if isCookieProbeRejected(probeErr) {
+				message = webCookieProbeError(provider)
+			} else {
+				message = probeErr.Error()
+			}
+		} else {
+			valid = true
+		}
+		now := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+		patch := map[string]any{"testStatus": "error", "lastError": message, "lastErrorAt": now}
+		if valid {
+			patch["testStatus"] = "active"
+			patch["lastErrorAt"] = nil
+		}
+		if _, err := p.Connections.Update(ctx, id, patch); err != nil {
+			return nil, err
+		}
+		return map[string]any{"valid": valid, "error": message, "refreshed": false, "latencyMs": time.Since(started).Milliseconds(), "testedAt": now}, nil
+	}
 	if strings.HasPrefix(provider, "openai-compatible-") {
 		target = strings.TrimSuffix(ttsString(metadata["baseUrl"]), "/") + "/models"
 		token = ttsString(connection["apiKey"])

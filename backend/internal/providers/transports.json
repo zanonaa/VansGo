@@ -139,6 +139,13 @@
     },
     "noAuth": false
   },
+  "claude-web": {
+    "baseUrl": "https://claude.ai/api/organizations",
+    "format": "claude-web",
+    "headers": {},
+    "auth": null,
+    "noAuth": false
+  },
   "cline": {
     "baseUrl": "https://api.cline.bot/api/v1/chat/completions",
     "format": "openai",
@@ -1049,6 +1056,13 @@
   "deepseek-web": {
     "baseUrl": "https://chat.deepseek.com/api/v0/chat/completion",
     "format": "deepseek-web",
+    "headers": {},
+    "auth": null,
+    "noAuth": false
+  },
+  "claude-web": {
+    "baseUrl": "https://claude.ai/api/organizations",
+    "format": "claude-web",
     "headers": {},
     "auth": null,
     "noAuth": false

@@ -4,7 +4,7 @@ import "testing"
 
 func TestCatalog(t *testing.T) {
 	entries := Catalog()
-	if len(entries) != 162 {
+	if len(entries) != 163 {
 		t.Fatalf("snapshot count: %d", len(entries))
 	}
 	seen := map[string]bool{}

@@ -2192,5 +2192,18 @@
     "noAuth": false,
     "serviceKinds": [],
     "authModes": []
+  },
+  {
+    "id": "claude-web",
+    "category": "webCookie",
+    "alias": "claude-web",
+    "aliases": [
+      "cw"
+    ],
+    "name": "Claude Web (Subscription)",
+    "displayName": "claude-web",
+    "noAuth": false,
+    "serviceKinds": [],
+    "authModes": []
   }
 ]
