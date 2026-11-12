@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -91,6 +92,17 @@ func TestZaiWebScanEmbeddedError(t *testing.T) {
 	sse := `data: {"type":"chat:completion","data":{"done":true,"error":{"code":"FRONTEND_CAPTCHA_REQUIRED","detail":"Captcha verification failed."}}}`
 	if _, _, err := zaiWebAccumulate(bufio.NewReader(strings.NewReader(sse))); err == nil {
 		t.Fatal("zai embedded error must fail the stream")
+	}
+}
+
+func TestZaiWebGuestTokenParses(t *testing.T) {
+	// GET /api/v1/auths/ devolve a sessão guest; só o campo token interessa.
+	body := `{"id":"abc","role":"guest","token":"eyJ.novo.token","token_type":"Bearer","expires_at":null}`
+	var parsed struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil || parsed.Token != "eyJ.novo.token" {
+		t.Fatalf("guest token: %q %v", parsed.Token, err)
 	}
 }
 

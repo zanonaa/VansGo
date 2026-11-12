@@ -3,6 +3,7 @@ package handlers
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 // Ferramentas voltam via shim <tool> (mesmo protocolo kimi/deepseek/grok).
 const (
 	zaiWebChatURL = "https://chat.z.ai/api/v2/chat/completions"
+	zaiWebAuthURL = "https://chat.z.ai/api/v1/auths/"
 	zaiWebUA      = "Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0"
 	zaiWebFE      = "prod-fe-1.2.10"
 	// ponytail: linha maior que isso é upstream hostil tentando OOM; eventos
@@ -139,7 +141,7 @@ func (t *TranslatorSend) sendZaiWeb(w http.ResponseWriter, r *http.Request, prov
 	}
 	defer cleanup()
 
-	do := func() (*http.Response, error) {
+	do := func(token, userID string) (*http.Response, error) {
 		request, err := http.NewRequestWithContext(r.Context(), "POST", zaiWebURL(token, userID), bytes.NewReader(payload))
 		if err != nil {
 			return nil, err
@@ -150,10 +152,31 @@ func (t *TranslatorSend) sendZaiWeb(w http.ResponseWriter, r *http.Request, prov
 		}
 		return client.Do(request)
 	}
-	response, err := do()
+	response, err := do(token, userID)
 	if err != nil {
 		fail(502, "Z.ai connection failed: "+err.Error())
 		return
+	}
+	// O guest é anônimo: um 401 é token velho, não limite. Um GET em
+	// /api/v1/auths/ emite outro token, que fica salvo na connection.
+	if response.StatusCode == http.StatusUnauthorized {
+		io.Copy(io.Discard, io.LimitReader(response.Body, 8<<10))
+		response.Body.Close()
+		fresh, refreshErr := zaiWebGuestToken(r.Context(), client, relay)
+		if refreshErr != nil {
+			fail(502, "Z.ai guest refresh failed: "+refreshErr.Error())
+			return
+		}
+		if _, refreshErr = t.Connections.Update(r.Context(), ttsString(connection["id"]), map[string]any{"apiKey": fresh}); refreshErr != nil {
+			fail(500, "persist refreshed Z.ai token: "+refreshErr.Error())
+			return
+		}
+		token = fresh
+		response, err = do(token, zaiWebUserID(token))
+		if err != nil {
+			fail(502, "Z.ai connection failed: "+err.Error())
+			return
+		}
 	}
 	defer response.Body.Close()
 	if response.StatusCode == 401 || response.StatusCode == 403 {
@@ -317,6 +340,42 @@ func zaiWebScan(reader *bufio.Reader, onDelta func(phase, chunk string)) error {
 		onDelta(event.Data.Phase, event.Data.DeltaContent)
 	}
 	return scanner.Err()
+}
+
+// zaiWebGuestToken pede um JWT guest novo. O endpoint é anônimo: cada GET
+// cria uma sessão, então serve tanto para renovar um token rejeitado quanto
+// para semear uma connection sem token.
+func zaiWebGuestToken(ctx context.Context, client *http.Client, relay string) (string, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, "GET", zaiWebAuthURL, nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", zaiWebUA)
+	request.Header.Set("x-fe-version", zaiWebFE)
+	if err := rewriteConnectionRelay(request, relay); err != nil {
+		return "", err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return "", fmt.Errorf("guest auth returned %d", response.StatusCode)
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&body); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(body.Token) == "" {
+		return "", fmt.Errorf("guest auth returned no token")
+	}
+	return body.Token, nil
 }
 
 // zaiWebURL monta a query de fingerprint do chat.z.ai (timestamp, requestId,

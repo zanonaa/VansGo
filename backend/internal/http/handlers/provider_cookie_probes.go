@@ -232,10 +232,12 @@ func cookieProbeClaude(ctx context.Context, client *http.Client, token string) e
 	return nil
 }
 
-// cookieProbeZai manda um chat mínimo no chat.z.ai: o JWT guest é aceito sem
-// captcha e a resposta chega como SSE chat:completion. Erro embutido no
-// primeiro evento (captcha/auth) reprova o token.
-func cookieProbeZai(ctx context.Context, client *http.Client, token string) error {
+// cookieProbeZai manda um chat mínimo no chat.z.ai e a resposta chega como SSE
+// chat:completion. Erro embutido no primeiro evento (captcha/auth) reprova.
+// 401 é token guest velho: o guest é anônimo, então a sonda pede outro token
+// em /api/v1/auths/ e retesta. O token novo volta em renewed para o chamador
+// gravar na connection.
+func cookieProbeZai(ctx context.Context, client *http.Client, token string) (renewed string, err error) {
 	payload, _ := json.Marshal(map[string]any{
 		"stream": true, "model": "x-preview-l",
 		"messages":         []any{map[string]any{"role": "user", "content": "ping"}},
@@ -247,17 +249,35 @@ func cookieProbeZai(ctx context.Context, client *http.Client, token string) erro
 	})
 	request, err := http.NewRequestWithContext(ctx, "POST", zaiWebURL(token, zaiWebUserID(token)), bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return "", err
 	}
 	zaiWebBrowserHeaders(request, token)
 	body, err := cookieProbeDo(ctx, client, request)
 	if err != nil {
-		return err
+		probe, rejected := err.(cookieProbeError)
+		if !rejected || probe.status != http.StatusUnauthorized {
+			return "", err
+		}
+		fresh, refreshErr := zaiWebGuestToken(ctx, client, "")
+		if refreshErr != nil {
+			return "", refreshErr
+		}
+		token = fresh
+		renewed = fresh
+		request, err = http.NewRequestWithContext(ctx, "POST", zaiWebURL(token, zaiWebUserID(token)), bytes.NewReader(payload))
+		if err != nil {
+			return renewed, err
+		}
+		zaiWebBrowserHeaders(request, token)
+		body, err = cookieProbeDo(ctx, client, request)
+		if err != nil {
+			return renewed, err
+		}
 	}
 	if _, _, scanErr := zaiWebAccumulate(bufio.NewReader(bytes.NewReader(body))); scanErr != nil {
-		return scanErr
+		return renewed, scanErr
 	}
-	return nil
+	return renewed, nil
 }
 
 // webCookieProbe roteia a sonda de cada provider cookie; retorna a mensagem de
@@ -277,7 +297,8 @@ func webCookieProbe(ctx context.Context, client *http.Client, provider, token st
 	case "claude-web":
 		return cookieProbeClaude(ctx, client, token)
 	case "zai-web":
-		return cookieProbeZai(ctx, client, token)
+		_, err := cookieProbeZai(ctx, client, token)
+		return err
 	}
 	return fmt.Errorf("unsupported provider: %s", provider)
 }

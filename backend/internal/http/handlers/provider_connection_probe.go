@@ -59,7 +59,24 @@ func (p *ConnectionProbe) Test(ctx context.Context, id string) (map[string]any, 
 		started := time.Now()
 		message := any(nil)
 		valid := false
-		if probeErr := webCookieProbe(ctx, client, provider, token); probeErr != nil {
+		if provider == "zai-web" {
+			// 401 renova o guest e devolve o token novo para gravar.
+			renewed, probeErr := cookieProbeZai(ctx, client, token)
+			if probeErr != nil {
+				if isCookieProbeRejected(probeErr) {
+					message = webCookieProbeError(provider)
+				} else {
+					message = probeErr.Error()
+				}
+			} else {
+				valid = true
+			}
+			if renewed != "" {
+				if _, err := p.Connections.Update(ctx, id, map[string]any{"apiKey": renewed}); err != nil {
+					return nil, err
+				}
+			}
+		} else if probeErr := webCookieProbe(ctx, client, provider, token); probeErr != nil {
 			if isCookieProbeRejected(probeErr) {
 				message = webCookieProbeError(provider)
 			} else {
