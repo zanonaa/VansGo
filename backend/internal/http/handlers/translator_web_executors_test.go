@@ -60,3 +60,38 @@ func TestGrokWebScanTokensAndFinal(t *testing.T) {
 		t.Fatal("grok error event must fail the stream")
 	}
 }
+
+func TestZaiWebScanPhases(t *testing.T) {
+	// phase thinking vira raciocínio, answer vira texto, other/done são ignorados.
+	sse := strings.Join([]string{
+		`data: {"type":"chat:completion","data":{"delta_content":"pensando","phase":"thinking"}}`,
+		`data: {"type":"chat:completion","data":{"phase":"other","usage":{"total_tokens":5}}}`,
+		`data: {"type":"chat:completion","data":{"delta_content":"Olá","phase":"answer"}}`,
+		`data: {"type":"chat:completion","data":{"delta_content":"!","phase":"answer"}}`,
+		`data: {"type":"chat:completion","data":{"phase":"done","done":true}}`,
+		`data: [DONE]`,
+		``,
+	}, "\n")
+	text, think, err := zaiWebAccumulate(bufio.NewReader(strings.NewReader(sse)))
+	if err != nil || text != "Olá!" || think != "pensando" {
+		t.Fatalf("zai phases: %q %q %v", text, think, err)
+	}
+}
+
+func TestZaiWebScanEmbeddedError(t *testing.T) {
+	sse := `data: {"type":"chat:completion","data":{"done":true,"error":{"code":"FRONTEND_CAPTCHA_REQUIRED","detail":"Captcha verification failed."}}}`
+	if _, _, err := zaiWebAccumulate(bufio.NewReader(strings.NewReader(sse))); err == nil {
+		t.Fatal("zai embedded error must fail the stream")
+	}
+}
+
+func TestZaiWebUserID(t *testing.T) {
+	// JWT guest do HAR: claim id 71d8d128-...; token malformado cai no uuid estável.
+	token := "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjcxZDhkMTI4LWE2YzgtNGQ5Ny1hM2I4LWE4ZjA3ZTFiZDg0ZCIsImVtYWlsIjoiZ3Vlc3QifQ.sig"
+	if got := zaiWebUserID(token); got != "71d8d128-a6c8-4d97-a3b8-a8f07e1bd84d" {
+		t.Fatalf("user id: %q", got)
+	}
+	if zaiWebUserID("sem-pontos") == "" || zaiWebUserID("sem-pontos") != zaiWebUserID("sem-pontos") {
+		t.Fatal("malformed token must yield a stable id")
+	}
+}

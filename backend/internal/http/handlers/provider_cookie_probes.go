@@ -5,6 +5,7 @@ package handlers
 // sessão foi aceita), espelhando a origem hikers-router.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -16,6 +17,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const cookieProbeChromeUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
@@ -229,6 +232,34 @@ func cookieProbeClaude(ctx context.Context, client *http.Client, token string) e
 	return nil
 }
 
+// cookieProbeZai manda um chat mínimo no chat.z.ai: o JWT guest é aceito sem
+// captcha e a resposta chega como SSE chat:completion. Erro embutido no
+// primeiro evento (captcha/auth) reprova o token.
+func cookieProbeZai(ctx context.Context, client *http.Client, token string) error {
+	payload, _ := json.Marshal(map[string]any{
+		"stream": true, "model": "x-preview-l",
+		"messages":         []any{map[string]any{"role": "user", "content": "ping"}},
+		"signature_prompt": "ping", "params": map[string]any{}, "extra": map[string]any{},
+		"features":         map[string]any{"enable_thinking": false},
+		"chat_id":          uuid.NewString(),
+		"id":               uuid.NewString(),
+		"background_tasks": map[string]any{"title_generation": false, "tags_generation": false},
+	})
+	request, err := http.NewRequestWithContext(ctx, "POST", zaiWebURL(token, zaiWebUserID(token)), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	zaiWebBrowserHeaders(request, token)
+	body, err := cookieProbeDo(ctx, client, request)
+	if err != nil {
+		return err
+	}
+	if _, _, scanErr := zaiWebAccumulate(bufio.NewReader(bytes.NewReader(body))); scanErr != nil {
+		return scanErr
+	}
+	return nil
+}
+
 // webCookieProbe roteia a sonda de cada provider cookie; retorna a mensagem de
 // erro pronta para o usuário quando a sessão foi rejeitada.
 func webCookieProbe(ctx context.Context, client *http.Client, provider, token string) error {
@@ -245,6 +276,8 @@ func webCookieProbe(ctx context.Context, client *http.Client, provider, token st
 		return cookieProbePerplexity(ctx, client, token)
 	case "claude-web":
 		return cookieProbeClaude(ctx, client, token)
+	case "zai-web":
+		return cookieProbeZai(ctx, client, token)
 	}
 	return fmt.Errorf("unsupported provider: %s", provider)
 }
@@ -263,6 +296,8 @@ func webCookieProbeError(provider string) string {
 		return "Invalid session cookie — re-paste __Secure-next-auth.session-token from perplexity.ai"
 	case "claude-web":
 		return "Invalid sessionKey — re-paste from claude.ai DevTools → Cookies → sessionKey"
+	case "zai-web":
+		return "Invalid Z.ai token — re-paste the guest token from chat.z.ai"
 	}
 	return "Invalid API key"
 }

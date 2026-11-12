@@ -1066,5 +1066,12 @@
     "headers": {},
     "auth": null,
     "noAuth": false
+  },
+  "zai-web": {
+    "baseUrl": "https://chat.z.ai/api/v2/chat/completions",
+    "format": "zai-web",
+    "headers": {},
+    "auth": null,
+    "noAuth": false
   }
 }

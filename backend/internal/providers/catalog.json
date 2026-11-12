@@ -2168,6 +2168,19 @@
     "authModes": []
   },
   {
+    "id": "zai-web",
+    "category": "webCookie",
+    "alias": "zai-web",
+    "aliases": [
+      "zai-web"
+    ],
+    "name": "Z.ai Web (Guest)",
+    "displayName": "zai-web",
+    "noAuth": false,
+    "serviceKinds": [],
+    "authModes": []
+  },
+  {
     "id": "kimi-web",
     "category": "webCookie",
     "alias": "kimi-web",

@@ -26,7 +26,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 ? "__Secure-next-auth.session-token=... or just the raw value"
                 : provider === "kimi-web"
                   ? "access_token (eyJ...) from www.kimi.ai"
-                  : "eyJhbGciOi...")
+                  : provider === "zai-web"
+                    ? "guest token (eyJ...) from chat.z.ai — token cookie or Authorization Bearer"
+                    : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : "");
 
   const isAzure = provider === "azure";

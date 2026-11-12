@@ -288,6 +288,11 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.Send.SendGrokWeb(w, r, provider, model, body, source, stream)
 		return
 	}
+	// Z.ai Web fala SSE em chat.z.ai com JWT guest.
+	if format == "zai-web" {
+		g.Send.SendZaiWeb(w, r, provider, model, body, source, stream)
+		return
+	}
 	if provider == "" {
 		g.webError(w, 400, "Invalid model: use provider/model")
 		return

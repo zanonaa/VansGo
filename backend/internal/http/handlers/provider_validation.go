@@ -123,7 +123,7 @@ func providersNormalize(value string) string { return strings.TrimSpace(strings.
 // fallback genérico do discovery não serve para nenhum deles.
 func isWebCookieProvider(provider string) bool {
 	switch provider {
-	case "deepseek-web", "kimi-web", "muse-spark-web", "grok-web", "perplexity-web", "claude-web":
+	case "deepseek-web", "kimi-web", "muse-spark-web", "grok-web", "perplexity-web", "claude-web", "zai-web":
 		return true
 	}
 	return false
