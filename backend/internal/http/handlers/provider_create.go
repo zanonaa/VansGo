@@ -160,6 +160,9 @@ func (h Providers) Create(w http.ResponseWriter, r *http.Request) {
 		authType = "cookie"
 	}
 	data := map[string]any{"provider": id, "authType": authType, "name": name, "apiKey": fallback("apiKey", ""), "priority": fallback("priority", float64(1)), "globalPriority": fallback("globalPriority", nil), "defaultModel": fallback("defaultModel", nil), "providerSpecificData": specific, "isActive": true, "testStatus": fallback("testStatus", "unknown")}
+	if value := str("refreshToken"); value != "" {
+		data["refreshToken"] = value
+	}
 	conn, err := h.CreateConnection(r.Context(), data)
 	if err != nil {
 		fail()

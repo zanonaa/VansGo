@@ -132,8 +132,11 @@ func (h Providers) Update(w http.ResponseWriter, r *http.Request) {
 			patch[key] = value
 		}
 	}
-	if nodeTruthy(body["apiKey"]) && existing["authType"] == "apikey" {
+	if nodeTruthy(body["apiKey"]) && (existing["authType"] == "apikey" || existing["authType"] == "cookie") {
 		patch["apiKey"] = body["apiKey"]
+	}
+	if _, exists := body["refreshToken"]; exists {
+		patch["refreshToken"] = body["refreshToken"]
 	}
 	_, hadSpecific := existing["providerSpecificData"]
 	_, hasSpecific := body["providerSpecificData"]

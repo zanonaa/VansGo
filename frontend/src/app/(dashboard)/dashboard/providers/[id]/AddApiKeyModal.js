@@ -19,8 +19,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         : provider === "deepseek-web"
           ? "64-char Bearer token from chat.deepseek.com (Authorization header)"
           : provider === "muse-spark-web"
-            ? "full Cookie header from www.meta.ai (needs ecto_1_sess)"
-            : "eyJhbGciOi...")
+            ? "ecto_1_sess=... or the full Cookie header from www.meta.ai"
+            : provider === "claude-web"
+              ? "sessionKey=sk-ant-sid01-... or sk-ant-sid01-... (claude.ai cookie)"
+              : provider === "perplexity-web"
+                ? "__Secure-next-auth.session-token=... or just the raw value"
+                : provider === "kimi-web"
+                  ? "access_token (eyJ...) from www.kimi.ai"
+                  : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : "");
 
   const isAzure = provider === "azure";

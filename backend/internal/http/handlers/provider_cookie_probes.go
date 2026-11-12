@@ -118,7 +118,7 @@ func cookieProbeMuseSpark(ctx context.Context, client *http.Client, token string
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "text/event-stream")
-	request.Header.Set("Cookie", "ecto_1_sess="+token)
+	request.Header.Set("Cookie", cookiePair(token, "ecto_1_sess"))
 	request.Header.Set("Origin", "https://www.meta.ai")
 	request.Header.Set("Referer", "https://www.meta.ai/")
 	request.Header.Set("User-Agent", cookieProbeChromeUA)
@@ -151,7 +151,7 @@ func cookieProbeGrok(ctx context.Context, client *http.Client, token string) err
 	request.Header.Set("Accept", "*/*")
 	request.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Cookie", "sso="+token)
+	request.Header.Set("Cookie", cookiePair(token, "sso"))
 	request.Header.Set("Origin", "https://grok.com")
 	request.Header.Set("Referer", "https://grok.com/")
 	request.Header.Set("Sec-Ch-Ua", `"Google Chrome";v="136", "Chromium";v="136", "Not(A:Brand";v="24"`)
@@ -193,7 +193,7 @@ func cookieProbePerplexity(ctx context.Context, client *http.Client, token strin
 	request.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
 	request.Header.Set("X-App-ApiClient", "default")
 	request.Header.Set("X-App-ApiVersion", "2.18")
-	request.Header.Set("Cookie", "__Secure-next-auth.session-token="+token)
+	request.Header.Set("Cookie", cookiePair(token, "__Secure-next-auth.session-token"))
 	body, err := cookieProbeDo(ctx, client, request)
 	if err != nil {
 		// De IP de datacenter o Cloudflare responde challenge antes de avaliar
@@ -206,17 +206,23 @@ func cookieProbePerplexity(ctx context.Context, client *http.Client, token strin
 	return nil
 }
 
-// claudeWebNormalizeCookie aceita o valor cru do sessionKey ou um header
-// Cookie: completo colado (contendo "="): o par verbatim preserva cf_clearance.
-func claudeWebNormalizeCookie(raw string) string {
+// cookiePair normaliza a entrada do usuário para o par name=value: valor cru
+// vira "name=<valor>"; header Cookie colado (ou par já nomeado) vai verbatim.
+func cookiePair(raw, name string) string {
 	value := strings.TrimSpace(raw)
 	value = strings.TrimPrefix(value, "bearer ")
 	value = strings.TrimPrefix(strings.TrimPrefix(value, "Cookie:"), "cookie:")
 	value = strings.TrimSpace(value)
-	if strings.Contains(value, "=") {
+	if strings.Contains(value, name+"=") {
 		return value
 	}
-	return "sessionKey=" + value
+	return name + "=" + value
+}
+
+// claudeWebNormalizeCookie aceita o valor cru do sessionKey ou um header
+// Cookie: completo colado (contendo "="): o par verbatim preserva cf_clearance.
+func claudeWebNormalizeCookie(raw string) string {
+	return cookiePair(raw, "sessionKey")
 }
 
 // cookieProbeClaude valida o sessionKey com o GET /organizations do claude.ai;
