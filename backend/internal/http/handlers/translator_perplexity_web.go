@@ -171,8 +171,10 @@ func (t *TranslatorSend) sendPerplexityWeb(w http.ResponseWriter, r *http.Reques
 	var toolCalls []any
 	finish := "stop"
 	if toolNonce != "" {
+		// O parse roda sobre o texto limpo: a limpeza remove tags grok/xml que
+		// o modelo mistura no bloco <tool>.
 		var stripped string
-		stripped, toolCalls = parseKimiWebToolCalls(text, toolNonce)
+		stripped, toolCalls = parseKimiWebToolCalls(content, toolNonce)
 		content = pplxWebClean(stripped)
 		if len(toolCalls) > 0 {
 			finish = "tool_calls"

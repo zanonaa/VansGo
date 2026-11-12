@@ -44,6 +44,15 @@ func TestPplxWebCleanStripsCitations(t *testing.T) {
 	}
 }
 
+func TestPplxWebToolBlockSurvivesClean(t *testing.T) {
+	// A limpeza tira citações e tags grok mas preserva o bloco <tool> do shim.
+	raw := "vou consultar[1]\n<tool>{\"name\":\"get_weather\",\"arguments\":{\"city\":\"SP\"}}</tool>\n<grok:render/>"
+	_, calls := parseKimiWebToolCalls(pplxWebClean(raw), "nonce")
+	if len(calls) != 1 {
+		t.Fatalf("tool block perdido na limpeza: %v", calls)
+	}
+}
+
 func TestGrokWebScanTokensAndFinal(t *testing.T) {
 	ndjson := strings.Join([]string{
 		`{"result":{"response":{"token":"Hel"}}}`,
