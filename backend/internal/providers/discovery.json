@@ -192,9 +192,9 @@
     "authPrefix": "Bearer "
   },
   "gemini": {
-    "url": "https://generativelanguage.googleapis.com/v1beta/models/models",
+    "url": "https://generativelanguage.googleapis.com/v1beta/models",
     "public": false,
-    "authHeader": "Authorization",
+    "authHeader": "x-goog-api-key",
     "authPrefix": ""
   },
   "gigachat": {
