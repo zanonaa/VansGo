@@ -407,6 +407,9 @@ func kimiWebFoldMessages(messages any, toolContract string) (string, string, err
 	}
 	system := []string{}
 	conversation := []string{}
+	// O contrato vai na última mensagem user real, nunca no resultado de tool:
+	// anexá-lo ao [tool result] faz o modelo reler o protocolo e reemitir a
+	// chamada em vez de responder com o dado.
 	lastUser := -1
 	for _, raw := range list {
 		message, ok := raw.(map[string]any)
@@ -419,7 +422,6 @@ func kimiWebFoldMessages(messages any, toolContract string) (string, string, err
 			// tem canal nativo; o upstream aceita só user/assistant).
 			text := kimiWebTextContent(message["content"])
 			conversation = append(conversation, fmt.Sprintf("User: [tool result for %s]\n%s", ttsString(message["tool_call_id"]), text))
-			lastUser = len(conversation) - 1
 			continue
 		}
 		if _, has := message["tool_calls"]; has && role == "assistant" {

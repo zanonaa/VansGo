@@ -123,6 +123,24 @@ func TestKimiWebFoldMessagesToolResult(t *testing.T) {
 	}
 }
 
+func TestKimiWebFoldMessagesToolContractSkipsToolResult(t *testing.T) {
+	// Follow-up de toolchain: o contrato fica na pergunta original, não no
+	// resultado da tool (senão o modelo chama a ferramenta de novo).
+	messages := []any{
+		map[string]any{"role": "user", "content": "qual o clima em SP"},
+		map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": "call_0", "function": map[string]any{"name": "get_weather", "arguments": "{}"}}}, "content": ""},
+		map[string]any{"role": "tool", "tool_call_id": "call_0", "content": "28C ensolarado"},
+	}
+	prompt, _, err := kimiWebFoldMessages(messages, kimiWebToolContract("abc123", []string{"- get_weather: clima"}))
+	if err != nil {
+		t.Fatalf("fold falhou: %v", err)
+	}
+	question, result, ok := strings.Cut(prompt, "User: [tool result")
+	if !ok || !strings.Contains(question, "<tool>") || strings.Contains(result, "<tool>") {
+		t.Fatalf("contrato deve ficar antes do tool result: %q", prompt)
+	}
+}
+
 func TestParseKimiWebToolCalls(t *testing.T) {
 	isRecentKimiWebNonce("nonce123")
 	text := `antes <tool>{"name": "list_files", "arguments": {"path": "/tmp"}, "_nonce": "nonce123"}</tool> depois`
