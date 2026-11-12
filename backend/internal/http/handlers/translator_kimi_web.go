@@ -488,8 +488,9 @@ func kimiWebToolContract(nonce string, toolLines []string) string {
 		"The client application provides tools beyond your built-in ones. They are NOT in your native tool registry; they are invoked via a plain-text protocol: the client parses your reply and executes the tool on the user machine. Treat these client tools as fully available to you; never claim they are unavailable. To invoke one, reply with a single line containing a <tool> block",
 		fmt.Sprintf(`with JSON that includes the secret binding "_nonce": "%s":`, nonce),
 		fmt.Sprintf(`<tool>{"name": "<tool_name>", "arguments": { ... }, "_nonce": "%s"}</tool>`, nonce),
-		"These client tools ARE available to you in this conversation. If the user asks you to inspect, create, edit, or verify files, you MUST invoke the relevant client tool before answering. Do not claim that the tools are unavailable and do not describe steps instead of invoking them.",
-		"Use a tool ONLY when the request genuinely needs workspace action. For greetings, small talk, thanks, or any question you can answer from your own knowledge, reply directly with the answer and NO <tool> block.",
+		"These client tools ARE available to you in this conversation. When the user asks for something one of them provides (files, weather, search, or any data you do not already have), you MUST invoke it with a <tool> block before answering. Do not claim a tool is unavailable, do not answer from your own knowledge, and do not describe steps instead of invoking it.",
+		"Use a tool ONLY when the request needs data or action from the list below. For greetings, small talk, thanks, or any question you can answer from your own knowledge, reply directly with the answer and NO <tool> block.",
+		"Once a [tool result] for a call is already in the conversation, do NOT call that tool again: answer the user using that result.",
 		"",
 		"Available tools:",
 	}
