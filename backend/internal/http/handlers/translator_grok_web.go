@@ -206,12 +206,16 @@ func (t *TranslatorSend) sendGrokWeb(w http.ResponseWriter, r *http.Request, pro
 	}
 
 	if !stream {
+		message := map[string]any{"role": "assistant", "content": content}
+		if len(toolCalls) > 0 {
+			message["tool_calls"] = openAIToolCalls(toolCalls)
+		}
 		nodeReply(w, 200, map[string]any{
 			"id":      fmt.Sprintf("chatcmpl-grok-%s", uuid.NewString()[:12]),
 			"object":  "chat.completion",
 			"created": time.Now().Unix(),
 			"model":   model,
-			"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": content}, "finish_reason": finish}},
+			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finish}},
 		})
 		return
 	}

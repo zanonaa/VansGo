@@ -269,25 +269,46 @@ func pplxWebModelPreference(model string) string {
 // pplxWebAccumulate consome o SSE e devolve o texto completo da resposta.
 func pplxWebAccumulate(reader *bufio.Reader) (string, error) {
 	var text strings.Builder
-	finished, err := pplxWebScan(reader, func(delta string) {
+	if _, err := pplxWebScan(reader, func(delta string) {
 		text.WriteString(delta)
-	})
-	if err != nil {
+	}); err != nil {
 		return "", err
 	}
-	if !finished {
-		return "", fmt.Errorf("stream ended without completion")
+	if text.Len() == 0 {
+		return "", fmt.Errorf("Perplexity returned no answer text")
 	}
 	return text.String(), nil
 }
 
 // pplxWebScan percorre os eventos SSE do perplexity_ask e chama onDelta a cada
-// fragmento novo de markdown. Retorna quando a resposta completa chegou.
+// fragmento novo de resposta. A API atual marca o texto como "ask_text" (e não
+// mais "markdown_block"), entrega chunks fragmentados nos eventos e o snapshot
+// completo em answer/chunks no evento DONE; versões antigas mandavam chunks
+// cumulativos. aceita() trata as duas formas sem duplicar texto.
 func pplxWebScan(reader *bufio.Reader, onDelta func(delta string)) (bool, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64<<10), pplxWebMaxLine)
 	finished := false
-	seen := 0
+	emitted := strings.Builder{}
+	accept := func(chunk string) {
+		if chunk == "" {
+			return
+		}
+		current := emitted.String()
+		switch {
+		case chunk == current, len(current) > len(chunk) && strings.HasPrefix(current, chunk):
+			// Duplicata ou snapshot antigo.
+		case len(chunk) > len(current) && strings.HasPrefix(chunk, current):
+			// Snapshot cumulativo: só o resto é novo.
+			onDelta(chunk[len(current):])
+			emitted.Reset()
+			emitted.WriteString(chunk)
+		default:
+			onDelta(chunk)
+			emitted.Reset()
+			emitted.WriteString(current + chunk)
+		}
+	}
 	for scanner.Scan() {
 		line := strings.TrimRight(scanner.Text(), "\r")
 		if !strings.HasPrefix(line, "data:") {
@@ -303,6 +324,7 @@ func pplxWebScan(reader *bufio.Reader, onDelta func(delta string)) (bool, error)
 				Mark  struct {
 					Chunks   []string `json:"chunks"`
 					Progress string   `json:"progress"`
+					Answer   string   `json:"answer"`
 				} `json:"markdown_block"`
 			} `json:"blocks"`
 			Text      string `json:"text"`
@@ -318,28 +340,22 @@ func pplxWebScan(reader *bufio.Reader, onDelta func(delta string)) (bool, error)
 			return finished, fmt.Errorf("Perplexity error %d: %s", event.ErrorCode, event.ErrorMsg)
 		}
 		for _, block := range event.Blocks {
-			if !strings.Contains(block.Usage, "markdown") || len(block.Mark.Chunks) == 0 {
+			if !strings.Contains(block.Usage, "text") && !strings.Contains(block.Usage, "markdown") {
 				continue
 			}
-			chunk := strings.Join(block.Mark.Chunks, "")
 			if block.Mark.Progress == "DONE" {
-				// Snapshot final: reinicia a emissão com o texto completo.
-				seen = len(chunk)
-				onDelta(chunk)
+				full := block.Mark.Answer
+				if full == "" {
+					full = strings.Join(block.Mark.Chunks, "")
+				}
+				accept(full)
 				finished = true
 				continue
 			}
-			full := chunk
-			if len(full) > seen {
-				onDelta(full[seen:])
-				seen = len(full)
-			}
+			accept(strings.Join(block.Mark.Chunks, ""))
 		}
 		if len(event.Blocks) == 0 && event.Text != "" {
-			if len(event.Text) > seen {
-				onDelta(event.Text[seen:])
-				seen = len(event.Text)
-			}
+			accept(strings.TrimSpace(event.Text))
 		}
 		if event.Final || event.Status == "COMPLETED" {
 			finished = true
