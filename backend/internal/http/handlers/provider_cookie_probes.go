@@ -96,32 +96,15 @@ func cookieProbeKimi(ctx context.Context, client *http.Client, token string) err
 	return err
 }
 
-// cookieProbeMuseSpark replica validateMuseSparkConnection da origem.
+// cookieProbeMuseSpark bate a home como o executor (museSparkToken). O ping
+// graphql aceita cookie desafiado e dava falso positivo: o challenge do
+// Cloudflare só aparece (403) na home.
 func cookieProbeMuseSpark(ctx context.Context, client *http.Client, token string) error {
-	payload, _ := json.Marshal(map[string]any{
-		"doc_id": "29ae946c82d1f301196c6ca2226400b5",
-		"variables": map[string]any{
-			"assistantMessageId": newKimiWebNonce(),
-			"content":            "ping",
-			"conversationId":     "c." + newKimiWebNonce(),
-			"currentBranchPath":  "0",
-			"entryPoint":         "KADABRA__CHAT__UNIFIED_INPUT_BAR",
-			"isNewConversation":  true,
-			"mode":               "mode_fast",
-			"turnId":             newKimiWebNonce(),
-			"userMessageId":      newKimiWebNonce(),
-		},
-	})
-	request, err := http.NewRequestWithContext(ctx, "POST", "https://www.meta.ai/api/graphql", bytes.NewReader(payload))
+	request, err := http.NewRequestWithContext(ctx, "GET", "https://www.meta.ai/", nil)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "text/event-stream")
-	request.Header.Set("Cookie", cookiePair(token, "ecto_1_sess"))
-	request.Header.Set("Origin", "https://www.meta.ai")
-	request.Header.Set("Referer", "https://www.meta.ai/")
-	request.Header.Set("User-Agent", cookieProbeChromeUA)
+	museSparkBrowserHeaders(request, cookiePair(token, "ecto_1_sess"))
 	_, err = cookieProbeDo(ctx, client, request)
 	return err
 }
