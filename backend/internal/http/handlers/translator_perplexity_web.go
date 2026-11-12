@@ -92,14 +92,20 @@ func (t *TranslatorSend) sendPerplexityWeb(w http.ResponseWriter, r *http.Reques
 	defer cleanup()
 
 	query := pplxWebQuery(systemPrompt, prompt)
+	// Com tool shim a busca nativa compete com o protocolo <tool>: o modelo
+	// responde pela web e ignora a tool. writing desliga a busca.
+	focus, sources := "internet", []any{"web"}
+	if toolNonce != "" {
+		focus, sources = "writing", []any{}
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"query_str": query,
 		"params": map[string]any{
 			"query_str":             query,
-			"search_focus":          "internet",
+			"search_focus":          focus,
 			"mode":                  "concise",
 			"model_preference":      pplxWebModelPreference(model),
-			"sources":               []any{"web"},
+			"sources":               sources,
 			"attachments":           []any{},
 			"frontend_uuid":         newKimiWebNonce(),
 			"frontend_context_uuid": newKimiWebNonce(),
