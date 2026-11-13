@@ -91,14 +91,7 @@ func (t *TranslatorSend) sendMuseSparkWeb(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	requestedTools, _ := intermediate["tools"].([]any)
-	var toolNonce string
-	var toolContract string
-	if len(requestedTools) > 0 {
-		toolNonce = newKimiWebNonce()
-		toolContract = kimiWebToolContract(toolNonce, kimiWebToolLines(requestedTools))
-	}
-	prompt, systemPrompt, err := kimiWebFoldMessages(intermediate["messages"], toolContract)
+	prompt, systemPrompt, err := kimiWebFoldMessages(intermediate["messages"])
 	if err != nil {
 		fail(400, err.Error())
 		return
@@ -126,21 +119,8 @@ func (t *TranslatorSend) sendMuseSparkWeb(w http.ResponseWriter, r *http.Request
 	}
 
 	content := reply.text
-	var toolCalls []any
-	finish := "stop"
-	if toolNonce != "" {
-		var stripped string
-		stripped, toolCalls = parseKimiWebToolCalls(content, toolNonce)
-		content = strings.TrimSpace(stripped)
-		if len(toolCalls) > 0 {
-			finish = "tool_calls"
-		}
-	}
 	if usage, ok := r.Context().Value(usageContextKey{}).(*requestUsage); ok && usage != nil {
 		usage.addText(content)
-		if len(toolCalls) > 0 {
-			usage.addToolCalls(toolCalls)
-		}
 	}
 
 	if !stream {
@@ -148,19 +128,16 @@ func (t *TranslatorSend) sendMuseSparkWeb(w http.ResponseWriter, r *http.Request
 		if reply.reasoning != "" {
 			message["reasoning_content"] = reply.reasoning
 		}
-		if len(toolCalls) > 0 {
-			message["tool_calls"] = openAIToolCalls(toolCalls)
-		}
 		nodeReply(w, 200, map[string]any{
 			"id":      fmt.Sprintf("chatcmpl-muse-%d", time.Now().UnixNano()),
 			"object":  "chat.completion",
 			"created": time.Now().Unix(),
 			"model":   model,
-			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finish}},
+			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": "stop"}},
 		})
 		return
 	}
-	writeOpenAIDeltas(w, model, reply.reasoning, content, toolCalls, finish)
+	writeOpenAIDeltas(w, model, reply.reasoning, content, nil, "stop")
 }
 
 // museSparkReply acumula a resposta do turno.
