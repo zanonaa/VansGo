@@ -64,16 +64,7 @@ func (t *TranslatorSend) sendPerplexityWeb(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// A API web não executa tools; o contrato vai no query como texto e as
-	// chamadas voltam via shim <tool> (mesmo protocolo do kimi/deepseek).
-	requestedTools, _ := intermediate["tools"].([]any)
-	var toolNonce string
-	var toolContract string
-	if len(requestedTools) > 0 {
-		toolNonce = newKimiWebNonce()
-		toolContract = kimiWebToolContract(toolNonce, kimiWebToolLines(requestedTools))
-	}
-	prompt, systemPrompt, err := kimiWebFoldMessages(intermediate["messages"], toolContract)
+	prompt, systemPrompt, err := kimiWebFoldMessages(intermediate["messages"])
 	if err != nil {
 		fail(400, err.Error())
 		return
@@ -92,12 +83,7 @@ func (t *TranslatorSend) sendPerplexityWeb(w http.ResponseWriter, r *http.Reques
 	defer cleanup()
 
 	query := pplxWebQuery(systemPrompt, prompt)
-	// Com tool shim a busca nativa compete com o protocolo <tool>: o modelo
-	// responde pela web e ignora a tool. writing desliga a busca.
 	focus, sources := "internet", []any{"web"}
-	if toolNonce != "" {
-		focus, sources = "writing", []any{}
-	}
 	payload, _ := json.Marshal(map[string]any{
 		"query_str": query,
 		"params": map[string]any{
@@ -157,7 +143,7 @@ func (t *TranslatorSend) sendPerplexityWeb(w http.ResponseWriter, r *http.Reques
 	}
 
 	reader := bufio.NewReaderSize(response.Body, 64<<10)
-	if stream && toolNonce == "" {
+	if stream {
 		t.pplxWebStreamRelay(w, reader, model)
 		return
 	}
@@ -168,40 +154,22 @@ func (t *TranslatorSend) sendPerplexityWeb(w http.ResponseWriter, r *http.Reques
 	}
 
 	content := pplxWebClean(text)
-	var toolCalls []any
-	finish := "stop"
-	if toolNonce != "" {
-		// O parse roda sobre o texto limpo: a limpeza remove tags grok/xml que
-		// o modelo mistura no bloco <tool>.
-		var stripped string
-		stripped, toolCalls = parseKimiWebToolCalls(content, toolNonce)
-		content = pplxWebClean(stripped)
-		if len(toolCalls) > 0 {
-			finish = "tool_calls"
-		}
-	}
 	if usage, ok := r.Context().Value(usageContextKey{}).(*requestUsage); ok && usage != nil {
 		usage.addText(content)
-		if len(toolCalls) > 0 {
-			usage.addToolCalls(toolCalls)
-		}
 	}
 
 	if !stream {
 		message := map[string]any{"role": "assistant", "content": content}
-		if len(toolCalls) > 0 {
-			message["tool_calls"] = openAIToolCalls(toolCalls)
-		}
 		nodeReply(w, 200, map[string]any{
 			"id":      fmt.Sprintf("chatcmpl-pplx-%d", time.Now().UnixNano()),
 			"object":  "chat.completion",
 			"created": time.Now().Unix(),
 			"model":   model,
-			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finish}},
+			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": "stop"}},
 		})
 		return
 	}
-	writeOpenAIDeltas(w, model, "", content, toolCalls, finish)
+	writeOpenAIDeltas(w, model, "", content, nil, "stop")
 }
 
 // pplxWebStreamRelay repassa o SSE do Perplexity como SSE OpenAI em tempo real.
