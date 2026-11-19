@@ -1,6 +1,6 @@
 module github.com/zanonaa/VansGo/backend
 
-go 1.23.4
+go 1.24
 
 require (
 	github.com/go-chi/chi/v5 v5.2.1
@@ -14,10 +14,13 @@ require (
 )
 
 require (
+	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/btree v1.1.2 // indirect
+	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
+	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/time v0.7.0 // indirect

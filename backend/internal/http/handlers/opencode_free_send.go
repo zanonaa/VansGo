@@ -4,13 +4,22 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/proxy"
+
+	utls "github.com/refraction-networking/utls"
 
 	"github.com/zanonaa/VansGo/backend/internal/providers"
 )
@@ -21,16 +30,17 @@ func newOpenCodeStreamScanner(reader io.Reader) *bufio.Scanner {
 	return scanner
 }
 
-// sendOpenCodeFree executa o contrato do free tier do OpenCode Zen:
-// fingerprint do quarteto, IDs canônicos, stream forçado upstream, credencial
-// "public" quando a conexão não tem chave, e fold do stream de volta a um
-// chat.completion quando o cliente pediu JSON (com nomes de tools restaurados).
+// sendOpenCodeFree executa o contrato do free tier do OpenCode Zen (main do
+// 9router): identidade cli/2.0.26 com 4 headers de sessão, fingerprint de
+// tools read/shell + bloco <env>, stream forçado upstream, credencial "public"
+// quando a conexão não tem chave, TLS uTLS (ClientHello do Bun) no trecho até
+// o upstream e fold do stream de volta a um chat.completion quando o cliente
+// pediu JSON (com nomes de tools restaurados).
 //
-// ip-limit: o free tier limita por IP de saída (janela diária UTC). Quando o
-// upstream responde 429/403 FreeUsageLimitError, a origem marca o pool como
-// unfit no escopo provider::modelo (retryAfter quando disponível) e re-tenta
-// com o próximo pool do pool-set (MAX_POOL_RETRIES=2). Sem mais pools,
-// devolve o 429 com Retry-After para o cliente.
+// Rejeição 429/403: corpo com "overloaded" é overload upstream — retry no
+// mesmo pool após o Retry-After; caso contrário é quota — a session é esquecida
+// (mint de nova na próxima tentativa) e o pool marca unfit no escopo
+// provider::modelo, re-tentando com o próximo pool (MAX_POOL_RETRIES=2).
 func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request, provider, model string, body map[string]any, connection map[string]any) {
 	fail := func(status int, message string) {
 		nodeReply(w, status, map[string]any{"success": false, "error": message})
@@ -40,10 +50,6 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 		outbound[key] = value
 	}
 	outbound["model"] = model
-	// Template oficial no primeiro system: sem isso o gate devolve 429
-	// FreeUsageLimitError para todo request (não é quota — é fingerprint).
-	openCodeInjectSystemPrefix(outbound)
-
 	clientWantsStream := outbound["stream"] == true
 	outbound["stream"] = true
 	renames := openCodeApplyFingerprint(outbound)
@@ -60,7 +66,7 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 	if !strings.HasSuffix(target, "/chat/completions") {
 		target += "/chat/completions"
 	}
-	headers := openCodeHeaders(r.Header, token)
+	connectionID := ttsString(connection["id"])
 
 	encoded, err := json.Marshal(outbound)
 	if err != nil {
@@ -70,7 +76,9 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 
 	metadata, _ := connection["providerSpecificData"].(map[string]any)
 	const maxPoolRetries = 2
+	const maxOverloadRetries = 2
 	excluded := []string{}
+	overloadRetries := 0
 	var lastStatus int
 	var lastDetails string
 	var lastRetryAfter string
@@ -94,6 +102,9 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 			attemptMetadata = copied
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		// Headers por tentativa: uma session rejeitada é esquecida e a próxima
+		// iteração minta outra (a quota upstream é contabilizada por session).
+		headers := openCodeHeaders(r.Header, token, connectionID)
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(encoded))
 		if err != nil {
 			cancel()
@@ -103,7 +114,7 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 		for key, value := range headers {
 			request.Header.Set(key, value)
 		}
-		client, relay, poolID, cleanup, err := resolveConnectionHTTP(ctx, attemptMetadata, t.GetPool, t.Client)
+		client, relay, poolID, cleanup, err := t.openCodeResolvedClient(ctx, attemptMetadata)
 		if err != nil {
 			cancel()
 			fail(502, err.Error())
@@ -111,6 +122,7 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 		}
 		if err := rewriteConnectionRelay(request, relay); err != nil {
 			cancel()
+			cleanup()
 			fail(502, err.Error())
 			return
 		}
@@ -145,7 +157,22 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 		lastStatus = response.StatusCode
 		lastDetails = string(details)
 		lastRetryAfter = response.Header.Get("Retry-After")
-		if poolID != "" && openCodeIsIPLimit(response.StatusCode, lastDetails) {
+		if (lastStatus == 429 || lastStatus == 403) && openCodeOverloadedRe.MatchString(lastDetails) {
+			// Overload upstream: não é cota do IP nem da session — espera o
+			// Retry-After e tenta de novo no mesmo pool.
+			if overloadRetries < maxOverloadRetries {
+				overloadRetries++
+				time.Sleep(openCodeOverloadBackoff(lastRetryAfter))
+				continue
+			}
+			break
+		}
+		if lastStatus == 429 || lastStatus == 403 {
+			// Quota por session rejeitada: esquece o valor para a próxima
+			// tentativa mintar outra (#5559 do 9router).
+			forgetOpenCodeSession(headers["x-opencode-session"])
+		}
+		if poolID != "" && openCodeIsIPLimit(lastStatus, lastDetails) {
 			until := ipLimitRetryAfter(lastRetryAfter)
 			markPoolUnfit(r.Context(), poolID, openCodeIPLimitScope(provider, model), until, "ip-limit")
 			excluded = append(excluded, poolID)
@@ -159,6 +186,22 @@ func (t *TranslatorSend) sendOpenCodeFree(w http.ResponseWriter, r *http.Request
 		w.Header().Set("Retry-After", lastRetryAfter)
 	}
 	nodeReply(w, lastStatus, map[string]any{"success": false, "error": fmt.Sprintf("Provider error: %d", lastStatus), "details": lastDetails})
+}
+
+// openCodeOverloadedRe distingue overload upstream de rejeição de quota
+// (OPENCODE_OVERLOAD_RE do executor do 9router).
+var openCodeOverloadedRe = regexp.MustCompile(`(?i)overloaded`)
+
+// openCodeOverloadBackoff converte o Retry-After do overload em espera, com
+// teto de 30s e piso de 2s.
+func openCodeOverloadBackoff(retryAfter string) time.Duration {
+	if seconds, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && seconds > 0 {
+		if seconds > 30 {
+			seconds = 30
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	return 2 * time.Second
 }
 
 // openCodeRelayResponse escreve a resposta de sucesso: stream dobrado de volta
@@ -195,6 +238,198 @@ func (t *TranslatorSend) openCodeRelayResponse(w http.ResponseWriter, response *
 		return
 	}
 	nodeReply(w, 200, completion)
+}
+
+// openCodeResolvedClient resolve o transporte do free tier com TLS uTLS no
+// trecho até o upstream (o gate valida o ClientHello). Relay segue no caminho
+// normal — o gate vê o egress do relay, não o nosso TLS. Direto, proxy HTTP
+// (CONNECT manual + handshake uTLS depois do túnel) e SOCKS (dialer + uTLS)
+// instalam DialTLSContext com a spec do Bun.
+func (t *TranslatorSend) openCodeResolvedClient(ctx context.Context, data map[string]any) (*http.Client, string, string, func(), error) {
+	config := resolveConnectionProxy(ctx, data, t.GetPool)
+	if config.relay != "" {
+		client, relay, cleanup, err := connectionHTTPResolved(ctx, data, config, t.Client)
+		return client, relay, config.poolID, cleanup, err
+	}
+	client := http.Client{}
+	if t.Client != nil {
+		client = *t.Client
+	}
+	cleanup := func() {}
+	switch {
+	case config.proxyURL != "":
+		if err := dialCheck(config.proxyURL); err != nil {
+			return nil, "", "", cleanup, err
+		}
+		var transport *http.Transport
+		var err error
+		tlsBase := baseTLSConfig(t.Client)
+		if isSOCKSProxyURL(config.proxyURL) {
+			transport, err = openCodeSocksTransport(config.proxyURL, tlsBase)
+		} else {
+			transport, err = openCodeProxyConnectTransport(config.proxyURL, config.noProxy, tlsBase)
+		}
+		if err != nil {
+			return nil, "", "", cleanup, err
+		}
+		if config.strict {
+			client.Transport = transport
+		} else {
+			client.Transport = proxyFallbackTransport{proxy: transport, direct: openCodeDirectTransport(tlsBase)}
+		}
+	case config.strict && (config.intended || proxyIntended(data)):
+		return nil, "", "", cleanup, errProxyRequired
+	default:
+		client.Transport = openCodeDirectTransport(baseTLSConfig(t.Client))
+	}
+	client.Transport = auditConnectionTransport(client.Transport)
+	if usage, ok := ctx.Value(usageContextKey{}).(*requestUsage); ok {
+		client.Transport = usageTransport{base: client.Transport, usage: usage}
+	}
+	return &client, "", config.poolID, cleanup, nil
+}
+
+// baseTLSConfig propaga o ajuste de confiança do client base (InsecureSkipVerify
+// e RootCAs customizados, ex.: upstreams de teste) para o handshake uTLS.
+func baseTLSConfig(base *http.Client) *utls.Config {
+	if base == nil {
+		return nil
+	}
+	transport, ok := base.Transport.(*http.Transport)
+	if !ok || transport.TLSClientConfig == nil {
+		return nil
+	}
+	return &utls.Config{
+		InsecureSkipVerify: transport.TLSClientConfig.InsecureSkipVerify,
+		RootCAs:            transport.TLSClientConfig.RootCAs,
+	}
+}
+
+// openCodeDirectTransport: conexão direta com TLS uTLS. Proxy nil de propósito:
+// com Proxy setado o net/http faz CONNECT e handshake Go TLS próprio,
+// ignorando DialTLSContext — e o gate responde 429.
+func openCodeDirectTransport(base *utls.Config) *http.Transport {
+	transport := sharedDirectTransport().Clone()
+	transport.Proxy = nil
+	transport.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return openCodeDialTLS(ctx, network, addr, base)
+	}
+	return transport
+}
+
+// openCodeDialTLS troca o handshake Go pelo uTLS (ClientHello do Bun).
+func openCodeDialTLS(ctx context.Context, network, addr string, base *utls.Config) (net.Conn, error) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	return openCodeTLSHandshake(ctx, raw, host, base)
+}
+
+// openCodeSocksTransport: egress via dialer SOCKS (auth da URL; socks5h/4a
+// resolvem o host no proxy) com handshake uTLS sobre o túnel.
+func openCodeSocksTransport(proxyURL string, base *utls.Config) (*http.Transport, error) {
+	parsed, err := url.Parse(strings.TrimSpace(proxyURL))
+	if err != nil || parsed.Host == "" {
+		return nil, err
+	}
+	address := parsed.Host
+	if parsed.Port() == "" {
+		address = net.JoinHostPort(parsed.Hostname(), "1080")
+	}
+	var auth *proxy.Auth
+	if parsed.User != nil {
+		password, _ := parsed.User.Password()
+		auth = &proxy.Auth{User: parsed.User.Username(), Password: password}
+	}
+	dialer, err := proxy.SOCKS5("tcp", address, auth, proxy.Direct)
+	if err != nil {
+		return nil, err
+	}
+	contextDialer, ok := dialer.(proxy.ContextDialer)
+	if !ok {
+		return nil, errors.New("socks dialer sem DialContext")
+	}
+	transport := openCodeDirectTransport(base)
+	transport.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := contextDialer.DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return openCodeTLSHandshake(ctx, raw, host, base)
+	}
+	return transport, nil
+}
+
+// openCodeProxyConnectTransport: CONNECT manual no proxy HTTP e handshake uTLS
+// depois do túnel. O transporte vê conexão direta já em TLS (Proxy nil).
+func openCodeProxyConnectTransport(proxyURL, noProxy string, base *utls.Config) (*http.Transport, error) {
+	parsed, err := url.Parse(strings.TrimSpace(proxyURL))
+	if err != nil || parsed.Host == "" {
+		return nil, err
+	}
+	transport := openCodeDirectTransport(base)
+	transport.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		if connectionNoProxyMatches(host, noProxy) {
+			return openCodeDialTLS(ctx, network, addr, base)
+		}
+		raw, err := openCodeProxyConnect(ctx, parsed, addr)
+		if err != nil {
+			return nil, err
+		}
+		return openCodeTLSHandshake(ctx, raw, host, base)
+	}
+	return transport, nil
+}
+
+// openCodeProxyConnect abre o túnel CONNECT no proxy HTTP e devolve o conn cru
+// pronto para o handshake TLS.
+func openCodeProxyConnect(ctx context.Context, proxyURL *url.URL, hostPort string) (net.Conn, error) {
+	address := proxyURL.Host
+	if proxyURL.Port() == "" {
+		address = net.JoinHostPort(proxyURL.Hostname(), "80")
+	}
+	raw, err := (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, "tcp", address)
+	if err != nil {
+		return nil, err
+	}
+	var connect strings.Builder
+	fmt.Fprintf(&connect, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n", hostPort, hostPort)
+	if proxyURL.User != nil {
+		password, _ := proxyURL.User.Password()
+		credential := base64.StdEncoding.EncodeToString([]byte(proxyURL.User.Username() + ":" + password))
+		fmt.Fprintf(&connect, "Proxy-Authorization: Basic %s\r\n", credential)
+	}
+	connect.WriteString("\r\n")
+	if _, err := raw.Write([]byte(connect.String())); err != nil {
+		raw.Close()
+		return nil, err
+	}
+	response, err := http.ReadResponse(bufio.NewReader(raw), nil)
+	if err != nil {
+		raw.Close()
+		return nil, err
+	}
+	// shortcut: resposta CONNECT sem corpo lido além do header não é
+	// re-verificada; se o proxy pipelinar bytes após o 200, o handshake falha —
+	// trocar por conn de buffer só se isso aparecer na prática.
+	if response.StatusCode != http.StatusOK {
+		raw.Close()
+		return nil, fmt.Errorf("proxy CONNECT: %s", response.Status)
+	}
+	return raw, nil
 }
 
 // openCodeIPLimitScope é o escopo de fitness do free tier (provider::modelo),
