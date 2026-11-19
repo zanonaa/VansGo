@@ -624,7 +624,7 @@
     "baseUrl": "https://opencode.ai/zen/v1/chat/completions",
     "format": "openai",
     "headers": {
-      "x-opencode-client": "desktop"
+      "x-opencode-client": "cli"
     },
     "auth": null,
     "noAuth": true

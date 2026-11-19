@@ -28,7 +28,7 @@ func TestOpenCodeIdentityAuditNoValues(t *testing.T) {
 	in := http.Header{}
 	in.Set("x-opencode-project", "private-project-secret")
 	in.Set("Authorization", "Bearer credential-secret")
-	auditOpenCodeIdentity(in, openCodeHeaders(in, "credential-secret"), "pool-test", "deepseek-test", 1)
+	auditOpenCodeIdentity(in, openCodeHeaders(in, "credential-secret", "conn-1"), "pool-test", "deepseek-test", 1)
 	got := buf.String()
 	if !strings.Contains(got, "project=replaced") || !strings.Contains(got, "pool_id=pool-test") {
 		t.Fatalf("missing diagnostic: %s", got)
@@ -40,7 +40,7 @@ func TestOpenCodeIdentityAuditNoValues(t *testing.T) {
 	}
 	buf.Reset()
 	t.Setenv("OUTBOUND_AUDIT", "false")
-	auditOpenCodeIdentity(in, openCodeHeaders(in, ""), "pool-test", "deepseek-test", 1)
+	auditOpenCodeIdentity(in, openCodeHeaders(in, "", "conn-1"), "pool-test", "deepseek-test", 1)
 	if buf.Len() != 0 {
 		t.Fatal("audit should be opt-in")
 	}

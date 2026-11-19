@@ -19,7 +19,9 @@ func auditOpenCodeIdentity(in http.Header, out map[string]string, poolID, model 
 		{"x-opencode-client", "client"},
 		{"x-opencode-project", "project"},
 		{"x-opencode-session", "session"},
-		{"x-opencode-request", "request"},
+		{"x-opencode-session-id", "session_id"},
+		{"x-session-affinity", "session_affinity"},
+		{"x-session-id", "session_id_alt"},
 	} {
 		attrs = append(attrs, field.label, openCodeIdentityDisposition(in.Get(field.header), out[field.header]))
 	}

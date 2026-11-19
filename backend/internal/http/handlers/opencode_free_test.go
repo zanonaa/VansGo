@@ -1,14 +1,15 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 )
 
-// Executor do free tier do OpenCode (porta de open-sse/executors/opencode.js;
-// contrato confirmado por github.com/tcatarina/cpa-ocfree).
+// Executor do free tier do OpenCode (porta do contrato do main do 9router
+// v0.5.119: utils/opencodeFingerprint.js + executors/opencode.js).
 
 func TestOpenCodeSessionIDShape(t *testing.T) {
 	session := openCodeSessionID()
@@ -32,50 +33,62 @@ func TestOpenCodeSessionIDShape(t *testing.T) {
 	}
 }
 
-func TestOpenCodeRequestIDShape(t *testing.T) {
-	request := openCodeRequestID()
-	if !strings.HasPrefix(request, "msg_") || len(request) != 30 {
-		t.Fatalf("shape %q", request)
+func TestOpenCodeStableSessionPerIdentity(t *testing.T) {
+	first := stableOpenCodeSession("conn:test-identity")
+	second := stableOpenCodeSession("conn:test-identity")
+	if first != second {
+		t.Fatalf("session instável: %s vs %s", first, second)
+	}
+	other := stableOpenCodeSession("conn:other-identity")
+	if other == first {
+		t.Fatal("identidades distintas compartilham session")
+	}
+	forgetOpenCodeSession(first)
+	if again := stableOpenCodeSession("conn:test-identity"); again == first {
+		t.Fatal("session rejeitada não foi esquecida")
 	}
 }
 
-func TestOpenCodeHeadersReuseClientIDs(t *testing.T) {
-	canonicalSession := "ses_" + strings.Repeat("f", 12) + strings.Repeat("A", 14)
-	canonicalRequest := "msg_" + strings.Repeat("0", 12) + strings.Repeat("B", 14)
+func TestOpenCodeHeadersV2(t *testing.T) {
+	canonical := "ses_" + strings.Repeat("f", 12) + strings.Repeat("A", 14)
 	client := http.Header{}
-	client.Set("x-opencode-session", canonicalSession)
-	client.Set("x-opencode-request", canonicalRequest)
-	client.Set("x-opencode-client", "agent")
-	headers := openCodeHeaders(client, "public")
-	if headers["x-opencode-session"] != canonicalSession {
-		t.Fatalf("session %q", headers["x-opencode-session"])
+	client.Set("x-opencode-session", canonical)
+	headers := openCodeHeaders(client, "public", "conn-1")
+	for _, key := range []string{"x-opencode-session", "x-opencode-session-id", "x-session-affinity", "x-session-id"} {
+		if headers[key] != canonical {
+			t.Fatalf("%s = %q, want %q", key, headers[key], canonical)
+		}
 	}
-	if headers["x-opencode-request"] != canonicalRequest {
-		t.Fatalf("request %q", headers["x-opencode-request"])
+	if _, exists := headers["x-opencode-request"]; exists {
+		t.Fatal("x-opencode-request não existe no contrato v2")
 	}
-	if headers["x-opencode-client"] != "agent" || headers["x-opencode-project"] != "global" {
+	if headers["User-Agent"] != "opencode/latest/2.0.26/cli" || headers["x-opencode-client"] != "cli" || headers["x-opencode-project"] != "global" {
 		t.Fatalf("headers %v", headers)
 	}
-	if headers["User-Agent"] != openCodeUserAgent || headers["Authorization"] != "Bearer public" {
-		t.Fatalf("ua/auth %v", headers)
+	if headers["Authorization"] != "Bearer public" || headers["Accept"] != "text/event-stream" {
+		t.Fatalf("auth/accept %v", headers)
 	}
-	// IDs malformados do cliente são substituídos, não repassados.
-	bad := openCodeHeaders(http.Header{"x-opencode-session": {"abc"}}, "")
-	if bad["x-opencode-session"] == "abc" {
-		t.Fatal("aceitou session malformado")
+	// Session malformada do cliente é substituída por uma estável da conexão.
+	bad := openCodeHeaders(http.Header{"x-opencode-session": {"abc"}}, "", "conn-1")
+	if bad["x-opencode-session"] == "abc" || !openCodePlausibleID(bad["x-opencode-session"]) {
+		t.Fatalf("session %q", bad["x-opencode-session"])
+	}
+	if bad["x-opencode-session"] != openCodeHeaders(http.Header{}, "", "conn-1")["x-opencode-session"] {
+		t.Fatal("sessions de uma mesma conexão divergem")
 	}
 }
 
-func TestOpenCodeFingerprintRenamesAndAppendsDecoys(t *testing.T) {
+func TestOpenCodeFingerprintConcealAndAppend(t *testing.T) {
+	// Tool do caller com nome gated por substring "terminal": viaja sob alias.
 	body := map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 		"tools": []any{
-			map[string]any{"type": "function", "function": map[string]any{"name": "Bash", "parameters": map[string]any{"type": "object"}}},
-			map[string]any{"type": "function", "function": map[string]any{"name": "bash", "parameters": map[string]any{"type": "object"}}},
-			map[string]any{"type": "function", "function": map[string]any{"name": "minha_tool", "parameters": map[string]any{"type": "object"}}},
+			map[string]any{"type": "function", "function": map[string]any{"name": "my_terminal_tool", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}},
+			map[string]any{"type": "function", "function": map[string]any{"name": "read", "description": "Caller read.", "parameters": map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}, "offset": map[string]any{"type": "integer"}, "limit": map[string]any{"type": "integer"}}, "required": []string{"path"}}}},
 		},
 	}
 	renames := openCodeApplyFingerprint(body)
-	if renames["bash"] != "Bash" {
+	if renames["run_command"] != "my_terminal_tool" {
 		t.Fatalf("renames %v", renames)
 	}
 	tools := body["tools"].([]any)
@@ -85,38 +98,106 @@ func TestOpenCodeFingerprintRenamesAndAppendsDecoys(t *testing.T) {
 		function := tool["function"].(map[string]any)
 		names = append(names, ttsString(function["name"]))
 	}
-	joined := strings.Join(names, ",")
-	for _, want := range []string{"bash", "minha_tool", "glob", "grep", "read"} {
-		if !strings.Contains(","+joined+",", ","+want+",") {
+	joined := "," + strings.Join(names, ",") + ","
+	for _, want := range []string{"run_command", "read", "shell"} {
+		if !strings.Contains(joined, ","+want+",") {
 			t.Fatalf("faltou %s em %v", want, names)
 		}
 	}
-	if strings.Count(joined, "bash") != 1 {
-		t.Fatalf("duplicata de bash: %v", names)
+	// read do caller com schema compatível: normalizado in place para a def
+	// oficial (mesma description + params verbatim do CLI).
+	for _, raw := range tools {
+		function := raw.(map[string]any)["function"].(map[string]any)
+		if ttsString(function["name"]) == "read" {
+			if ttsString(function["description"]) != ttsString(openCodeFingerprintDefinitions["read"]["description"]) {
+				t.Fatal("read não normalizado in place")
+			}
+		}
 	}
-	if body["tool_choice"] != nil {
-		t.Fatalf("tool_choice deveria continuar nil com tools do caller: %v", body["tool_choice"])
+	// Nota de placeholders anexada ao system (read foi appended).
+	if encoded, err := json.Marshal(body); err != nil || !strings.Contains(string(encoded), "placeholder that does nothing") {
+		t.Fatalf("nota de placeholders ausente: %s", err)
 	}
-	// Decoy carrega a descrição "unavailable" do executor original.
-	last := tools[len(tools)-1].(map[string]any)
-	function := last["function"].(map[string]any)
-	if ttsString(function["description"]) != openCodeDecoyDescription {
-		t.Fatalf("decoy %v", function)
+	// Bloco <env> anexado ao primeiro system message (encoder sem escape HTML).
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(body); err != nil || !strings.Contains(buffer.String(), "<env>") {
+		t.Fatal("<env> ausente")
 	}
 }
 
-func TestOpenCodeFingerprintWithoutCallerToolsChoosesNone(t *testing.T) {
-	body := map[string]any{}
+func TestOpenCodeFingerprintCollisionGoesClientAlias(t *testing.T) {
+	// Colisão com schema divergente viaja sob <key>_client e o nome original é
+	// restaurado na resposta.
+	body := map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+		"tools": []any{
+			map[string]any{"type": "function", "function": map[string]any{"name": "shell", "description": "Different shell.", "parameters": map[string]any{"type": "object", "properties": map[string]any{"cmd": map[string]any{"type": "string"}}}}},
+		},
+	}
 	renames := openCodeApplyFingerprint(body)
-	if renames != nil {
+	if renames["shell_client"] != "shell" {
 		t.Fatalf("renames %v", renames)
 	}
-	if body["tool_choice"] != "none" {
+	names := []string{}
+	for _, raw := range body["tools"].([]any) {
+		names = append(names, ttsString(raw.(map[string]any)["function"].(map[string]any)["name"]))
+	}
+	if len(names) != 3 || !strings.Contains(strings.Join(names, ","), "shell_client") {
+		t.Fatalf("tools %v", names)
+	}
+	payload := map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"tool_calls": []any{
+		map[string]any{"function": map[string]any{"name": "shell_client"}},
+	}}}}}
+	openCodeRestoreNames(payload, renames)
+	got := payload["choices"].([]any)[0].(map[string]any)["delta"].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any)["name"]
+	if got != "shell" {
+		t.Fatalf("restaurou %q", got)
+	}
+}
+
+func TestOpenCodeFingerprintPassthroughAndNone(t *testing.T) {
+	// Def verbatim do CLI: passthrough, sem renames.
+	body := map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+		"tools": []any{map[string]any{"type": "function", "function": map[string]any{
+			"name":        "shell",
+			"description": openCodeFingerprintDefinitions["shell"]["description"],
+			"parameters":  openCodeFingerprintDefinitions["shell"]["parameters"],
+		}}},
+		"tool_choice": "none",
+	}
+	if renames := openCodeApplyFingerprint(body); renames != nil {
+		t.Fatalf("renames %v", renames)
+	}
+	// tool_choice "none" é deletado (upstream 403).
+	if body["tool_choice"] != nil {
+		t.Fatalf("tool_choice %v", body["tool_choice"])
+	}
+	names := []string{}
+	for _, raw := range body["tools"].([]any) {
+		names = append(names, ttsString(raw.(map[string]any)["function"].(map[string]any)["name"]))
+	}
+	if len(names) != 2 {
+		t.Fatalf("quarteto v2 é read+shell: %v", names)
+	}
+}
+
+func TestOpenCodeFingerprintWithoutCallerToolsGetsEnv(t *testing.T) {
+	body := map[string]any{}
+	openCodeApplyFingerprint(body)
+	if body["tool_choice"] != nil {
 		t.Fatalf("tool_choice %v", body["tool_choice"])
 	}
 	tools := body["tools"].([]any)
-	if len(tools) != 4 {
-		t.Fatalf("quarteto %d", len(tools))
+	if len(tools) != 2 {
+		t.Fatalf("par read+shell: %d", len(tools))
+	}
+	// Sem system: bloco <env> entra como primeiro message.
+	messages := body["messages"].([]any)
+	if ttsString(messages[0].(map[string]any)["role"]) != "system" || !strings.Contains(ttsString(messages[0].(map[string]any)["content"]), "<env>") {
+		t.Fatalf("messages %v", messages)
 	}
 }
 
@@ -130,7 +211,7 @@ func openCodeSSE(t *testing.T, v any) string {
 }
 
 func TestOpenCodeFoldStreamAndRestore(t *testing.T) {
-	call1 := map[string]any{"index": 0, "id": "call_1", "function": map[string]any{"name": "bash", "arguments": `{"a"`}}
+	call1 := map[string]any{"index": 0, "id": "call_1", "function": map[string]any{"name": "run_command", "arguments": `{"a"`}}
 	call2 := map[string]any{"index": 0, "function": map[string]any{"name": "", "arguments": ":1}"}}
 	chunks := []string{
 		openCodeSSE(t, map[string]any{"id": "c1", "created": 1, "model": "m",
@@ -144,7 +225,7 @@ func TestOpenCodeFoldStreamAndRestore(t *testing.T) {
 		"data: [DONE]",
 		"",
 	}
-	completion, err := openCodeFoldStream(strings.NewReader(strings.Join(chunks, "\n")), "m", map[string]string{"bash": "Bash"})
+	completion, err := openCodeFoldStream(strings.NewReader(strings.Join(chunks, "\n")), "m", map[string]string{"run_command": "My_Terminal_Tool"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +236,7 @@ func TestOpenCodeFoldStreamAndRestore(t *testing.T) {
 	}
 	call := message["tool_calls"].([]any)[0].(map[string]any)
 	function := call["function"].(map[string]any)
-	if function["name"] != "Bash" || function["arguments"] != `{"a":1}` {
+	if function["name"] != "My_Terminal_Tool" || function["arguments"] != `{"a":1}` {
 		t.Fatalf("call %v", call)
 	}
 	if choice["finish_reason"] != "tool_calls" {
@@ -166,8 +247,8 @@ func TestOpenCodeFoldStreamAndRestore(t *testing.T) {
 		t.Fatalf("usage %v", usage)
 	}
 	encoded, _ := json.Marshal(completion)
-	if strings.Contains(string(encoded), `"bash"`) {
-		t.Fatal("nome canônico vazou na resposta")
+	if strings.Contains(string(encoded), `"run_command"`) {
+		t.Fatal("alias vazou na resposta")
 	}
 }
 
@@ -175,5 +256,16 @@ func TestOpenCodeFoldStreamSurfacesMidStreamError(t *testing.T) {
 	stream := "data: {\"error\":\"boom\"}\n\n"
 	if _, err := openCodeFoldStream(strings.NewReader(stream), "m", nil); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("erro do stream engolido: %v", err)
+	}
+}
+
+func TestOpenCodeClientHelloSpecShape(t *testing.T) {
+	spec := openCodeClientHelloSpec()
+	// 17 ciphers BoringSSL do Bun 1.3.14, sem GREASE, key_share único x25519.
+	if len(spec.CipherSuites) != 17 {
+		t.Fatalf("ciphers %d", len(spec.CipherSuites))
+	}
+	if len(spec.Extensions) != 14 {
+		t.Fatalf("extensions %d", len(spec.Extensions))
 	}
 }
