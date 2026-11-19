@@ -258,7 +258,7 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.Send.SendCommandCode(w, r, provider, model, body, source, stream)
 		return
 	}
-	// Kimi Web (www.kimi.ai) fala Connect-RPC com tool shim no prompt.
+	// Kimi Web (www.kimi.ai) fala Connect-RPC.
 	if format == "kimi-web" {
 		g.Send.SendKimiWeb(w, r, provider, model, body, source, stream)
 		return

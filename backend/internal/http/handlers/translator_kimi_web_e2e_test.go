@@ -157,70 +157,6 @@ func TestKimiWebSendE2ENoTools(t *testing.T) {
 	}
 }
 
-func TestKimiWebSendE2EToolChain(t *testing.T) {
-	upstream := &kimiWebMockUpstream{}
-	send := kimiWebTestSend(t, kimiWebKimiTransport(t, upstream))
-	// Turno 1: mock extrai o nonce do próprio contrato no request e responde
-	// com um <tool> ligado àquele nonce — loop real de ponta a ponta.
-	upstream.respond = func(prompt string) []byte {
-		start := strings.Index(prompt, `"_nonce": "`)
-		if start < 0 {
-			t.Fatalf("contrato sem nonce no prompt: %q", prompt)
-		}
-		rest := prompt[start+len(`"_nonce": "`):]
-		end := strings.Index(rest, `"`)
-		nonce := rest[:end]
-		text := `<tool>{"name": "list_files", "arguments": {"path": "/tmp/opencode"}, "_nonce": "` + nonce + `"}</tool>`
-		return kimiWebResponse("", text)
-	}
-	w := httptest.NewRecorder()
-	send.SendKimiWeb(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"stream":false}`)), "kimi-web", "k3", map[string]any{
-		"messages": []any{map[string]any{"role": "user", "content": "liste /tmp/opencode"}},
-		"tools": []any{map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        "list_files",
-				"description": "Lista arquivos de um diretório",
-				"parameters":  map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}},
-			},
-		}},
-	}, "openai", false)
-	if w.Code != 200 {
-		t.Fatalf("status %d: %s", w.Code, w.Body.String())
-	}
-	var completion map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &completion); err != nil {
-		t.Fatalf("resposta não é JSON: %v", err)
-	}
-	choice := completion["choices"].([]any)[0].(map[string]any)
-	if choice["finish_reason"] != "tool_calls" {
-		t.Fatalf("finish: %v — body: %s", choice["finish_reason"], w.Body.String())
-	}
-	calls := choice["message"].(map[string]any)["tool_calls"].([]any)
-	call := calls[0].(map[string]any)
-	function, _ := call["function"].(map[string]any)
-	if call["type"] != "function" || function["name"] != "list_files" {
-		t.Fatalf("tool call: %v", call)
-	}
-	if function["arguments"] != `{"path":"/tmp/opencode"}` {
-		t.Fatalf("arguments: %v", function["arguments"])
-	}
-	// Contrato com nonce foi parado no fim da última user message.
-	prompt := kimiWebPrompt(t, upstream)
-	if !strings.Contains(prompt, "liste /tmp/opencode") || !strings.Contains(prompt, "<tool>") || !strings.Contains(prompt, "list_files") {
-		t.Fatalf("contrato ausente do prompt: %q", prompt)
-	}
-	if strings.Contains(prompt, "kimiWebToolContract") {
-		t.Fatalf("símbolo vazou no prompt")
-	}
-	nonce := kimiWebRecentNonce[len(kimiWebRecentNonce)-1]
-	if !strings.Contains(prompt, nonce) {
-		t.Fatalf("prompt sem o nonce %q: %q", nonce, prompt)
-	}
-	// O JSON do mock usa o nonce capturado antes do request; o mock não conhece
-	// o nonce real gerado no turno — a extração válida já cobre o parser.
-}
-
 func TestKimiWebSendE2EStreamRelay(t *testing.T) {
 	upstream := &kimiWebMockUpstream{respond: func(string) []byte { return kimiWebResponse("pensando", "olá mundo") }}
 	send := kimiWebTestSend(t, kimiWebKimiTransport(t, upstream))
@@ -253,7 +189,6 @@ func TestKimiWebSendE2EToolResultContinuation(t *testing.T) {
 			map[string]any{"role": "assistant", "content": "", "tool_calls": []any{map[string]any{"id": "call_0", "type": "function", "function": map[string]any{"name": "list_files", "arguments": `{"path":"/tmp"}`}}}},
 			map[string]any{"role": "tool", "tool_call_id": "call_0", "content": "a.txt"},
 		},
-		"tools": []any{map[string]any{"type": "function", "function": map[string]any{"name": "list_files", "description": "lista"}}},
 	}, "openai", false)
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())

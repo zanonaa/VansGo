@@ -66,16 +66,7 @@ func (t *TranslatorSend) sendKimiWeb(w http.ResponseWriter, r *http.Request, pro
 		}
 	}
 
-	// Tool shim: a API web rejeita o campo tools preenchido, então o contrato
-	// vai no prompt e as chamadas voltam como texto <tool>{...}</tool>.
-	requestedTools, _ := intermediate["tools"].([]any)
-	var toolNonce string
-	var toolContract string
-	if len(requestedTools) > 0 {
-		toolNonce = newKimiWebNonce()
-		toolContract = kimiWebToolContract(toolNonce, kimiWebToolLines(requestedTools))
-	}
-	prompt, systemPrompt, err := kimiWebFoldMessages(intermediate["messages"], toolContract)
+	prompt, systemPrompt, err := kimiWebFoldMessages(intermediate["messages"])
 	if err != nil {
 		fail(400, err.Error())
 		return
@@ -144,10 +135,9 @@ func (t *TranslatorSend) sendKimiWeb(w http.ResponseWriter, r *http.Request, pro
 	}
 
 	// O upstream sempre responde em stream Connect, independente do que o
-	// cliente pediu. Com tools no turno, o texto é buffered para o parse do
-	// shim extrair os tool calls antes da emissão; sem tools, flua direto.
+	// cliente pediu; flua direto.
 	reader := bufio.NewReader(response.Body)
-	if stream && len(requestedTools) == 0 {
+	if stream {
 		t.kimiWebStreamRelay(w, r, reader, model)
 		return
 	}
@@ -158,21 +148,8 @@ func (t *TranslatorSend) sendKimiWeb(w http.ResponseWriter, r *http.Request, pro
 	}
 
 	content := text
-	var toolCalls []any
-	finish := "stop"
-	if toolNonce != "" {
-		var stripped string
-		stripped, toolCalls = parseKimiWebToolCalls(text, toolNonce)
-		content = strings.TrimSpace(stripped)
-		if len(toolCalls) > 0 {
-			finish = "tool_calls"
-		}
-	}
 	if usage, ok := r.Context().Value(usageContextKey{}).(*requestUsage); ok && usage != nil {
 		usage.addText(content)
-		if len(toolCalls) > 0 {
-			usage.addToolCalls(toolCalls)
-		}
 	}
 
 	if !stream {
@@ -180,15 +157,12 @@ func (t *TranslatorSend) sendKimiWeb(w http.ResponseWriter, r *http.Request, pro
 		if think != "" {
 			message["reasoning_content"] = think
 		}
-		if len(toolCalls) > 0 {
-			message["tool_calls"] = openAIToolCalls(toolCalls)
-		}
 		nodeReply(w, 200, map[string]any{
 			"id":      fmt.Sprintf("chatcmpl-kimi-%d", time.Now().UnixNano()),
 			"object":  "chat.completion",
 			"created": time.Now().Unix(),
 			"model":   model,
-			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finish}},
+			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": "stop"}},
 		})
 		return
 	}
@@ -214,17 +188,12 @@ func (t *TranslatorSend) sendKimiWeb(w http.ResponseWriter, r *http.Request, pro
 		writeChunk(map[string]any{"role": "assistant", "reasoning_content": think}, nil)
 		first = false
 	}
-	if content != "" || len(toolCalls) == 0 {
-		delta := map[string]any{"content": content}
-		if first {
-			delta["role"] = "assistant"
-		}
-		writeChunk(delta, nil)
+	delta := map[string]any{"content": content}
+	if first {
+		delta["role"] = "assistant"
 	}
-	for i, call := range toolCalls {
-		writeChunk(map[string]any{"tool_calls": []any{map[string]any{"index": i, "id": fmt.Sprintf("call_%d", i), "type": "function", "function": call}}}, nil)
-	}
-	writeChunk(map[string]any{}, finish)
+	writeChunk(delta, nil)
+	writeChunk(map[string]any{}, "stop")
 	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
@@ -395,9 +364,8 @@ func kimiWebChatBody(prompt, systemPrompt string) map[string]any {
 }
 
 // kimiWebFoldMessages dobra o histórico OpenAI no turno único do Kimi Web:
-// system(s) viram system_prompt; a conversa vira "User:"/""Assistant:"; o
-// contrato de tools pronto (quando há shim) entra no fim da última user.
-func kimiWebFoldMessages(messages any, toolContract string) (string, string, error) {
+// system(s) viram system_prompt; a conversa vira "User:"/"Assistant:".
+func kimiWebFoldMessages(messages any) (string, string, error) {
 	list, ok := messages.([]any)
 	if !ok {
 		if messages == nil {
@@ -407,10 +375,6 @@ func kimiWebFoldMessages(messages any, toolContract string) (string, string, err
 	}
 	system := []string{}
 	conversation := []string{}
-	// O contrato vai na última mensagem user real, nunca no resultado de tool:
-	// anexá-lo ao [tool result] faz o modelo reler o protocolo e reemitir a
-	// chamada em vez de responder com o dado.
-	lastUser := -1
 	for _, raw := range list {
 		message, ok := raw.(map[string]any)
 		if !ok {
@@ -439,20 +403,12 @@ func kimiWebFoldMessages(messages any, toolContract string) (string, string, err
 			}
 		case "user":
 			conversation = append(conversation, text)
-			lastUser = len(conversation) - 1
 		case "assistant":
 			if text != "" {
 				conversation = append(conversation, "Assistant: "+text)
 			}
 		default:
 			return "", "", fmt.Errorf("Kimi Web does not support message role %s", role)
-		}
-	}
-	if toolContract != "" {
-		if lastUser >= 0 && lastUser < len(conversation) {
-			conversation[lastUser] += toolContract
-		} else {
-			conversation = append(conversation, strings.TrimSpace(toolContract))
 		}
 	}
 	return strings.TrimSpace(strings.Join(conversation, "\n\n")), strings.Join(system, "\n\n"), nil
@@ -479,134 +435,6 @@ func kimiWebTextContent(value any) string {
 		return strings.Join(parts, "")
 	}
 	return ""
-}
-
-// kimiWebToolContract renderiza o contrato do shim com o nonce.
-func kimiWebToolContract(nonce string, toolLines []string) string {
-	lines := []string{
-		"\n\n---\nCLIENT TOOL PROTOCOL (active in this conversation):",
-		"The client application provides tools beyond your built-in ones. They are NOT in your native tool registry; they are invoked via a plain-text protocol: the client parses your reply and executes the tool on the user machine. Treat these client tools as fully available to you; never claim they are unavailable. To invoke one, reply with a single line containing a <tool> block",
-		fmt.Sprintf(`with JSON that includes the secret binding "_nonce": "%s":`, nonce),
-		fmt.Sprintf(`<tool>{"name": "<tool_name>", "arguments": { ... }, "_nonce": "%s"}</tool>`, nonce),
-		"These client tools ARE available to you in this conversation. When the user asks for something one of them provides (files, weather, search, or any data you do not already have), you MUST invoke it with a <tool> block before answering. Do not claim a tool is unavailable, do not answer from your own knowledge, and do not describe steps instead of invoking it.",
-		"Use a tool ONLY when the request needs data or action from the list below. For greetings, small talk, thanks, or any question you can answer from your own knowledge, reply directly with the answer and NO <tool> block.",
-		"Once a [tool result] for a call is already in the conversation, do NOT call that tool again: answer the user using that result.",
-		"",
-		"Available tools:",
-	}
-	lines = append(lines, toolLines...)
-	lines = append(lines, "[Client protocol reminder: the client-tool contract above is active in this conversation. These client tools ARE available via the <tool> block protocol.]")
-	return strings.Join(lines, "\n")
-}
-
-// kimiWebToolLines serializa cada tool como "- name: description\n  parameters: {...}".
-func kimiWebToolLines(tools []any) []string {
-	lines := []string{}
-	for _, raw := range tools {
-		tool, _ := raw.(map[string]any)
-		function, _ := tool["function"].(map[string]any)
-		name := ttsString(function["name"])
-		if name == "" {
-			continue
-		}
-		line := "- " + name
-		if description := ttsString(function["description"]); description != "" {
-			line += ": " + description
-		}
-		if parameters := function["parameters"]; parameters != nil {
-			if encoded, err := json.Marshal(parameters); err == nil {
-				line += "\n  parameters: " + string(encoded)
-			}
-		}
-		lines = append(lines, line)
-	}
-	return lines
-}
-
-// parseKimiWebToolCalls extrai blocos <tool>{...}</tool> (ou <tool_call>) do
-// texto. JSON nu nunca vira tool call; nonce presente e errado rejeita o bloco
-// (anti copy-attack); nonce ausente é tolerado.
-func parseKimiWebToolCalls(text, nonce string) (string, []any) {
-	if !strings.Contains(text, "<tool>") && !strings.Contains(text, "<tool_call") {
-		return text, nil
-	}
-	calls := []any{}
-	accepted := [][2]int{}
-	for _, tag := range []struct{ open, close string }{{"<tool>", "</tool>"},
-		{"<tool_call>", "</tool_call>"},
-	} {
-		rest := text
-		base := 0
-		for {
-			start := strings.Index(rest, tag.open)
-			if start < 0 {
-				break
-			}
-			endRel := strings.Index(rest[start:], tag.close)
-			if endRel < 0 {
-				break
-			}
-			end := start + endRel + len(tag.close)
-			inner := strings.TrimSpace(rest[start+len(tag.open) : start+endRel])
-			if call, ok := kimiWebParseToolJSON(inner, nonce, len(calls)); ok {
-				calls = append(calls, call)
-				accepted = append(accepted, [2]int{base + start, base + end})
-			}
-			rest = rest[end:]
-			base += end
-		}
-	}
-	if len(calls) == 0 {
-		return text, nil
-	}
-	var stripped strings.Builder
-	last := 0
-	for _, span := range accepted {
-		stripped.WriteString(text[last:span[0]])
-		last = span[1]
-	}
-	stripped.WriteString(text[last:])
-	return stripped.String(), calls
-}
-
-// openAIToolCalls embrulha as chamadas do shim no shape OpenAI (id/type/function).
-func openAIToolCalls(calls []any) []any {
-	wrapped := make([]any, 0, len(calls))
-	for index, call := range calls {
-		wrapped = append(wrapped, map[string]any{
-			"index": index, "id": fmt.Sprintf("call_%d", index), "type": "function", "function": call,
-		})
-	}
-	return wrapped
-}
-
-func kimiWebParseToolJSON(raw, nonce string, index int) (map[string]any, bool) {
-	var parsed map[string]any
-	if json.Unmarshal([]byte(raw), &parsed) != nil {
-		return nil, false
-	}
-	name, _ := parsed["name"].(string)
-	if name == "" {
-		name, _ = parsed["command"].(string)
-	}
-	if name == "" || name == "<tool_name>" {
-		return nil, false
-	}
-	if claimed, has := parsed["_nonce"].(string); has && claimed != nonce && !isRecentKimiWebNonce(claimed) {
-		return nil, false
-	}
-	arguments := "{}"
-	switch args := parsed["arguments"].(type) {
-	case string:
-		if strings.TrimSpace(args) != "" {
-			arguments = args
-		}
-	case map[string]any, []any:
-		if encoded, err := json.Marshal(args); err == nil {
-			arguments = string(encoded)
-		}
-	}
-	return map[string]any{"name": name, "arguments": arguments}, true
 }
 
 // Nonces por request: 12 chars hex, com janela de recentes para aceitar o

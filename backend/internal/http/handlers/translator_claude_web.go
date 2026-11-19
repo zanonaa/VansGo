@@ -112,16 +112,7 @@ func (t *TranslatorSend) sendClaudeWeb(w http.ResponseWriter, r *http.Request, p
 		}
 	}
 
-	// Tools válidos seguem para o payload nativo; o shim de texto do kimi-web
-	// cobre schemas não-função quando necessário.
-	requestedTools, _ := intermediate["tools"].([]any)
-	var toolNonce string
-	var toolContract string
-	if len(requestedTools) > 0 {
-		toolNonce = newKimiWebNonce()
-		toolContract = kimiWebToolContract(toolNonce, kimiWebToolLines(requestedTools))
-	}
-	prompt, _, err := kimiWebFoldMessages(intermediate["messages"], toolContract)
+	prompt, _, err := kimiWebFoldMessages(intermediate["messages"])
 	if err != nil {
 		fail(400, err.Error())
 		return
@@ -159,6 +150,7 @@ func (t *TranslatorSend) sendClaudeWeb(w http.ResponseWriter, r *http.Request, p
 	}
 
 	conversationID := uuid.NewString()
+	requestedTools, _ := intermediate["tools"].([]any)
 	payload := claudeWebCompletionPayload(prompt, model, requestedTools)
 	encoded, _ := json.Marshal(payload)
 	completionURL := fmt.Sprintf(claudeWebCompletionURLTemplate, orgID, conversationID)
@@ -210,7 +202,7 @@ func (t *TranslatorSend) sendClaudeWeb(w http.ResponseWriter, r *http.Request, p
 	}
 
 	reader := bufio.NewReader(response.Body)
-	if stream && len(requestedTools) == 0 {
+	if stream {
 		t.claudeWebStreamRelay(w, reader, model)
 		return
 	}
@@ -221,21 +213,8 @@ func (t *TranslatorSend) sendClaudeWeb(w http.ResponseWriter, r *http.Request, p
 	}
 
 	content := text
-	var toolCalls []any
-	finish := "stop"
-	if toolNonce != "" {
-		var stripped string
-		stripped, toolCalls = parseKimiWebToolCalls(text, toolNonce)
-		content = strings.TrimSpace(stripped)
-		if len(toolCalls) > 0 {
-			finish = "tool_calls"
-		}
-	}
 	if usage, ok := r.Context().Value(usageContextKey{}).(*requestUsage); ok && usage != nil {
 		usage.addText(content)
-		if len(toolCalls) > 0 {
-			usage.addToolCalls(toolCalls)
-		}
 	}
 
 	if !stream {
@@ -243,19 +222,16 @@ func (t *TranslatorSend) sendClaudeWeb(w http.ResponseWriter, r *http.Request, p
 		if think != "" {
 			message["reasoning_content"] = think
 		}
-		if len(toolCalls) > 0 {
-			message["tool_calls"] = openAIToolCalls(toolCalls)
-		}
 		nodeReply(w, 200, map[string]any{
 			"id":      fmt.Sprintf("chatcmpl-claude-web-%d", time.Now().UnixNano()),
 			"object":  "chat.completion",
 			"created": time.Now().Unix(),
 			"model":   model,
-			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finish}},
+			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": "stop"}},
 		})
 		return
 	}
-	writeOpenAIDeltas(w, model, think, content, toolCalls, finish)
+	writeOpenAIDeltas(w, model, think, content, nil, "stop")
 }
 
 // claudeWebStreamRelay repassa o SSE do claude.ai como SSE OpenAI em tempo real.

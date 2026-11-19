@@ -83,16 +83,7 @@ func (t *TranslatorSend) sendZaiWeb(w http.ResponseWriter, r *http.Request, prov
 		}
 	}
 
-	// Tool shim: o chat.z.ai não registra tools, então o contrato vai no prompt
-	// e as chamadas voltam como texto <tool>{...}</tool> (nonce anti copy-attack).
-	requestedTools, _ := intermediate["tools"].([]any)
-	var toolNonce string
-	var toolContract string
-	if len(requestedTools) > 0 {
-		toolNonce = newKimiWebNonce()
-		toolContract = kimiWebToolContract(toolNonce, kimiWebToolLines(requestedTools))
-	}
-	message, _, err := kimiWebFoldMessages(intermediate["messages"], toolContract)
+	message, _, err := kimiWebFoldMessages(intermediate["messages"])
 	if err != nil {
 		fail(400, err.Error())
 		return
@@ -194,10 +185,9 @@ func (t *TranslatorSend) sendZaiWeb(w http.ResponseWriter, r *http.Request, prov
 		return
 	}
 
-	// SSE sempre em stream; com tools o texto é buffered para o shim
-	// extrair os tool calls antes da emissão.
+	// SSE sempre em stream; flua direto.
 	reader := bufio.NewReaderSize(response.Body, 64<<10)
-	if stream && toolNonce == "" {
+	if stream {
 		t.zaiWebStreamRelay(w, reader, model)
 		return
 	}
@@ -208,21 +198,8 @@ func (t *TranslatorSend) sendZaiWeb(w http.ResponseWriter, r *http.Request, prov
 	}
 
 	content := strings.TrimSpace(text)
-	var toolCalls []any
-	finish := "stop"
-	if toolNonce != "" {
-		var stripped string
-		stripped, toolCalls = parseKimiWebToolCalls(text, toolNonce)
-		content = strings.TrimSpace(stripped)
-		if len(toolCalls) > 0 {
-			finish = "tool_calls"
-		}
-	}
 	if usage, ok := r.Context().Value(usageContextKey{}).(*requestUsage); ok && usage != nil {
 		usage.addText(content)
-		if len(toolCalls) > 0 {
-			usage.addToolCalls(toolCalls)
-		}
 	}
 
 	if !stream {
@@ -230,19 +207,16 @@ func (t *TranslatorSend) sendZaiWeb(w http.ResponseWriter, r *http.Request, prov
 		if think != "" {
 			message["reasoning_content"] = think
 		}
-		if len(toolCalls) > 0 {
-			message["tool_calls"] = openAIToolCalls(toolCalls)
-		}
 		nodeReply(w, 200, map[string]any{
 			"id":      fmt.Sprintf("chatcmpl-zai-%s", uuid.NewString()[:12]),
 			"object":  "chat.completion",
 			"created": time.Now().Unix(),
 			"model":   model,
-			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finish}},
+			"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": "stop"}},
 		})
 		return
 	}
-	writeOpenAIDeltas(w, model, think, content, toolCalls, finish)
+	writeOpenAIDeltas(w, model, think, content, nil, "stop")
 }
 
 // zaiWebStreamRelay repassa o SSE do chat.z.ai como SSE OpenAI em tempo real;
