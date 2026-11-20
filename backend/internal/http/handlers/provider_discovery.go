@@ -68,8 +68,8 @@ func (d *ProviderDiscovery) Get(w http.ResponseWriter, r *http.Request) {
 		target = "https://generativelanguage.googleapis.com/v1beta/models"
 	case "codex":
 		// chatgpt.com has no /responses/models listing; the real catalog is
-		// /codex/models and requires the CLI identity headers (#4202).
-		target = "https://chatgpt.com/backend-api/codex/models"
+		// /codex/models, requires client_version and the CLI identity headers (#4202).
+		target = "https://chatgpt.com/backend-api/codex/models?client_version=0.159.0"
 		headers["User-Agent"] = "codex_cli_rs/0.159.0"
 		headers["originator"] = "codex_cli_rs"
 	case "qwen":
@@ -134,6 +134,21 @@ func (d *ProviderDiscovery) Get(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+	}
+	// codex entries use slug/display_name; the dashboard filters on id.
+	if provider == "codex" {
+		normalized := make([]any, 0, len(models.([]any)))
+		for _, item := range models.([]any) {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			normalized = append(normalized, map[string]any{
+				"id":   entry["slug"],
+				"name": firstNonEmpty(entry["display_name"], entry["slug"]),
+			})
+		}
+		models = normalized
 	}
 	nodeReply(w, 200, map[string]any{"provider": provider, "connectionId": connection["id"], "models": models})
 }

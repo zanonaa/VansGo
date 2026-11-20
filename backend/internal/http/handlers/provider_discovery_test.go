@@ -42,17 +42,17 @@ func TestProviderDiscoveryCustomAndUpstreamError(t *testing.T) {
 func TestProviderDiscoveryCodex(t *testing.T) {
 	store := &gcpStore{item: map[string]any{"id": "connection", "provider": "codex", "accessToken": "tok"}}
 	handler := &ProviderDiscovery{Connections: store, Client: &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {
-		if r.URL.String() != "https://chatgpt.com/backend-api/codex/models" {
+		if r.URL.String() != "https://chatgpt.com/backend-api/codex/models?client_version=0.159.0" {
 			t.Fatal("wrong codex discovery URL: " + r.URL.String())
 		}
 		if r.Header.Get("Authorization") != "Bearer tok" || r.Header.Get("originator") != "codex_cli_rs" || r.Header.Get("User-Agent") != "codex_cli_rs/0.159.0" {
 			t.Fatal("missing codex identity headers")
 		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"models":[{"id":"gpt-6.1-sol"}]}`))}, nil
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"models":[{"slug":"gpt-6.1-sol","display_name":"GPT 6.1 Sol"}]}`))}, nil
 	})}}
 	w := httptest.NewRecorder()
 	handler.Get(w, httptest.NewRequest("GET", "/", nil))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "gpt-6.1-sol") {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"id":"gpt-6.1-sol"`) || !strings.Contains(w.Body.String(), "GPT 6.1 Sol") {
 		t.Fatal(w.Body.String())
 	}
 }
