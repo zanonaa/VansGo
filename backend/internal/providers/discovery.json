@@ -113,12 +113,6 @@
     "authHeader": "Authorization",
     "authPrefix": "Bearer "
   },
-  "codex": {
-    "url": "https://chatgpt.com/backend-api/codex/responses/models",
-    "public": false,
-    "authHeader": "Authorization",
-    "authPrefix": "Bearer "
-  },
   "cohere": {
     "url": "https://api.cohere.ai/v1/models",
     "public": false,
