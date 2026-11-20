@@ -66,6 +66,12 @@ func (d *ProviderDiscovery) Get(w http.ResponseWriter, r *http.Request) {
 		headers["Anthropic-Version"] = "2023-06-01"
 	case "gemini":
 		target = "https://generativelanguage.googleapis.com/v1beta/models"
+	case "codex":
+		// chatgpt.com has no /responses/models listing; the real catalog is
+		// /codex/models and requires the CLI identity headers (#4202).
+		target = "https://chatgpt.com/backend-api/codex/models"
+		headers["User-Agent"] = "codex_cli_rs/0.159.0"
+		headers["originator"] = "codex_cli_rs"
 	case "qwen":
 		target = "https://portal.qwen.ai/v1/models"
 		if resource := strings.TrimSpace(ttsString(metadata["resourceUrl"])); resource != "" {
