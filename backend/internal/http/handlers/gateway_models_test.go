@@ -18,7 +18,7 @@ func gatewayModelsFixture(t *testing.T) *Gateway {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	_, err = db.Exec(`CREATE TABLE settings(id INTEGER PRIMARY KEY,data TEXT); INSERT INTO settings VALUES(1,'{"requireApiKey":true}'); CREATE TABLE providerConnections(id TEXT PRIMARY KEY,provider TEXT,authType TEXT,name TEXT,email TEXT,priority REAL,isActive INTEGER,data TEXT,createdAt TEXT,updatedAt TEXT); INSERT INTO providerConnections VALUES('o','openai','apikey',NULL,NULL,1,1,'{}','now','now'); CREATE TABLE combos(id TEXT PRIMARY KEY,name TEXT,kind TEXT,models TEXT,context_length REAL,createdAt TEXT,updatedAt TEXT);`)
+	_, err = db.Exec(`CREATE TABLE settings(id INTEGER PRIMARY KEY,data TEXT); INSERT INTO settings VALUES(1,'{"requireApiKey":true}'); CREATE TABLE providerConnections(id TEXT PRIMARY KEY,provider TEXT,authType TEXT,name TEXT,email TEXT,priority REAL,isActive INTEGER,data TEXT,createdAt TEXT,updatedAt TEXT); INSERT INTO providerConnections VALUES('o','openai','apikey',NULL,NULL,1,1,'{}','now','now'); CREATE TABLE combos(id TEXT PRIMARY KEY,name TEXT,kind TEXT,models TEXT,context_length REAL,createdAt TEXT,updatedAt TEXT); CREATE TABLE kv(scope TEXT,key TEXT,value TEXT, PRIMARY KEY(scope,key));`)
 	if err != nil {
 		t.Fatal(err)
 	}

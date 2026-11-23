@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/zanonaa/VansGo/backend/internal/database"
@@ -164,6 +165,55 @@ func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {	w.Head
 		}
 		seen[full] = true
 		data = append(data, map[string]any{"id": full, "object": "model", "kind": "llm", "owned_by": alias})
+	}
+	// CustomModels importados via dashboard (kv scope='customModels'), como na
+	// origem (allowedModels.js: mergedModelIds = [...modelIds, ...customModelIds,
+	// ...aliasModelIds]). ACL idêntica ao chat (OpenAIChat): provider precisa de
+	// conexão ativa/noAuth, providerAllowed aceita id/alias/prefixo de node.
+	custom, err := (database.ModelAliases{DB: g.DB}).CustomList(r.Context())
+	if err != nil {
+		nodeReply(w, 500, map[string]any{"error": map[string]any{"message": err.Error(), "type": "server_error"}})
+		return
+	}
+	type customModel struct {
+		id, name string
+	}
+	customs := []customModel{}
+	for _, entry := range custom {
+		item, _ := entry.(map[string]any)
+		if item == nil || ttsString(item["type"]) != "llm" {
+			continue
+		}
+		id := ttsString(item["id"])
+		if id == "" {
+			continue
+		}
+		alias := ttsString(item["providerAlias"])
+		if alias == "" {
+			continue
+		}
+		provider := alias
+		if resolved, ok := providers.AliasMap()[alias]; ok && !providers.ReservedPrefix(alias) {
+			provider = resolved
+		} else if nodeID := g.providerNodeID(r.Context(), alias); nodeID != "" {
+			provider = nodeID
+		}
+		if !enabled[provider] || !g.providerAllowed(key, provider, alias) || !gatewayPermission(key, "allowedKinds", "llm") {
+			continue
+		}
+		name := id
+		if v := ttsString(item["name"]); v != "" {
+			name = v
+		}
+		customs = append(customs, customModel{id: alias + "/" + id, name: name})
+	}
+	sort.Slice(customs, func(i, j int) bool { return customs[i].id < customs[j].id })
+	for _, item := range customs {
+		if seen[item.id] {
+			continue
+		}
+		seen[item.id] = true
+		data = append(data, map[string]any{"id": item.id, "object": "model", "kind": "llm", "name": item.name, "owned_by": item.id})
 	}
 	nodeReply(w, 200, map[string]any{"object": "list", "data": data})
 }
