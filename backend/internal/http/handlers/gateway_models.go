@@ -192,8 +192,10 @@ func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {	w.Head
 		if alias == "" {
 			continue
 		}
+		// Resolução igual ao chat (splitTranslatorModel): alias embutido vira
+		// id (cx → codex); prefixo de provider-node resolve para o node id.
 		provider := alias
-		if resolved, ok := providers.AliasMap()[alias]; ok && !providers.ReservedPrefix(alias) {
+		if resolved, ok := providers.AliasMap()[alias]; ok {
 			provider = resolved
 		} else if nodeID := g.providerNodeID(r.Context(), alias); nodeID != "" {
 			provider = nodeID
