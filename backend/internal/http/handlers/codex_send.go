@@ -1045,13 +1045,7 @@ func (t *TranslatorSend) SendCodex(w http.ResponseWriter, r *http.Request, provi
 		fail(500, err.Error())
 		return
 	}
-	var connection map[string]any
-	for _, candidate := range connections {
-		if candidate["isActive"] != false {
-			connection = candidate
-			break
-		}
-	}
+	connection := comboConnectionFor(r.Context(), provider, connections)
 	if connection == nil {
 		fail(400, "No active connection for provider: "+provider)
 		return
