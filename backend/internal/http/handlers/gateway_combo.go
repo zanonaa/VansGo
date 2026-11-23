@@ -283,6 +283,14 @@ func (g *Gateway) chatCombo(w http.ResponseWriter, r *http.Request, key, body ma
 		return true
 	}
 	models = providers.RotateCombo(models, name, strategy, int(pxpipeNum(settings["comboStickyRoundRobinLimit"])))
+	// Regra de produto: dentro de um model, esgotar TODAS as conexões ativas
+	// do provider (ordem de prioridade) antes de saltar para o próximo model.
+	models, connectionsByProvider, err := g.expandComboConnections(r, models)
+	if err != nil {
+		g.webError(w, 500, err.Error())
+		return true
+	}
+	occurrences := map[string]int{}
 	var last, firstFailure *comboAttempt
 	for _, model := range models {
 		if r.Context().Err() != nil {
@@ -301,6 +309,12 @@ func (g *Gateway) chatCombo(w http.ResponseWriter, r *http.Request, key, body ma
 		request := r.Clone(r.Context())
 		request.Body = io.NopCloser(bytes.NewReader(encoded))
 		attempt := &comboAttempt{destination: w}
+		// Cada repetição do model fixa a próxima conexão ativa do provider; o
+		// executor (comboConnectionFor) usa a fixada em vez da primeira ativa.
+		occurrences[model]++
+		if fixed := g.comboConnectionCandidate(r, model, occurrences[model], connectionsByProvider); fixed != nil {
+			request = request.WithContext(context.WithValue(request.Context(), comboConnectionKey{}, fixed))
+		}
 		g.OpenAIChat(attempt, request)
 		if attempt.committed || attempt.status >= 200 && attempt.status < 300 {
 			if !attempt.committed {

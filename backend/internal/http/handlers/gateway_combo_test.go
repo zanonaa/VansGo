@@ -257,3 +257,48 @@ func TestComboContentBlockedCandidateReturnsItsOwnStatus(t *testing.T) {
 		t.Fatalf("status %d, esperado 400: %s", w.Code, w.Body.String())
 	}
 }
+
+// Regra de produto: dentro de um model, esgotar TODAS as conexões ativas do
+// provider (ordem de prioridade) antes de saltar para o próximo model do
+// combo. Duas conexões openai: a primeira responde 429, o combo deve tentar
+// a segunda (credencial distinta vista pelo transport) antes de avançar.
+func TestComboFallbackExhaustsConnectionsPerModel(t *testing.T) {
+	g := gatewayModelsFixture(t)
+	g.DB.Exec(`UPDATE settings SET data='{"requireApiKey":false}'`)
+	if _, err := g.DB.Exec(`INSERT INTO providerConnections VALUES('o2','openai','apikey',NULL,NULL,2,1,'{"apiKey":"second"}','now','now'); UPDATE providerConnections SET data='{"apiKey":"first"}' WHERE id='o'; INSERT INTO combos VALUES('c','bundle','llm','["openai/primary","openai/second"]',NULL,'now','now');`); err != nil {
+		t.Fatal(err)
+	}
+	requests := []string{}
+	g.Send = &TranslatorSend{Connections: sendConnections{items: []map[string]any{{"provider": "openai", "isActive": true, "apiKey": "first"}, {"provider": "openai", "isActive": true, "apiKey": "second"}}}, Client: &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {
+		requests = append(requests, r.Header.Get("Authorization"))
+		return &http.Response{StatusCode: 429, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":"rate limit"}`))}, nil
+	})}}
+	w := httptest.NewRecorder()
+	g.OpenAIChat(w, httptest.NewRequest("POST", "/api/v1/chat/completions", strings.NewReader(`{"model":"bundle","messages":[{"role":"user","content":"hi"}]}`)))
+	if w.Code != 429 {
+		t.Fatalf("status %d, esperado 429 após esgotar: %s", w.Code, w.Body.String())
+	}
+	if strings.Join(requests, ",") != "Bearer first,Bearer second,Bearer first,Bearer second" {
+		t.Fatalf("cada model deve tentar as 2 conexões antes de avançar: %v", requests)
+	}
+}
+
+// Fora de combo (sem conexão fixada no context), a chamada direta mantém o
+// comportamento: sempre a primeira conexão ativa.
+func TestDirectCallUsesFirstActiveConnection(t *testing.T) {
+	g := gatewayModelsFixture(t)
+	g.DB.Exec(`UPDATE settings SET data='{"requireApiKey":false}'`)
+	if _, err := g.DB.Exec(`INSERT INTO providerConnections VALUES('o2','openai','apikey',NULL,NULL,2,1,'{"apiKey":"second"}','now','now'); UPDATE providerConnections SET data='{"apiKey":"first"}' WHERE id='o';`); err != nil {
+		t.Fatal(err)
+	}
+	requests := []string{}
+	g.Send = &TranslatorSend{Connections: sendConnections{items: []map[string]any{{"provider": "openai", "isActive": true, "apiKey": "first"}, {"provider": "openai", "isActive": true, "apiKey": "second"}}}, Client: &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {
+		requests = append(requests, r.Header.Get("Authorization"))
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("data: ok\n\n"))}, nil
+	})}}
+	w := httptest.NewRecorder()
+	g.OpenAIChat(w, httptest.NewRequest("POST", "/api/v1/chat/completions", strings.NewReader(`{"model":"openai/primary","messages":[{"role":"user","content":"hi"}]}`)))
+	if w.Code != 200 || strings.Join(requests, ",") != "Bearer first" {
+		t.Fatalf("chamada direta deve usar a primeira ativa: %d %v", w.Code, requests)
+	}
+}
