@@ -313,7 +313,10 @@ export default function ProvidersPage() {
     return sortByPriority(
       Object.entries(OAUTH_PROVIDERS)
         .filter(([, info]) => !info.hidden && matchSearch(info.name))
-        .filter(([key]) => displayFilter === "all" || isActiveProvider(key, "oauth")),
+        // Dual-auth providers (glm/kimi persist apikey connections) count both
+        // modes, same as the Free Tier cards — otherwise the card shows "No
+        // connections" while the detail page lists them.
+        .filter(([key, info]) => displayFilter === "all" || isActiveProvider(key, getProviderAuthTypes(info, key))),
       "oauth",
     );
   }, [matchSearch, displayFilter, isActiveProvider]);
@@ -511,18 +514,21 @@ export default function ProvidersPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {oauthEntries.map(([key, info]) => (
+          {oauthEntries.map(([key, info]) => {
+            const authTypes = getProviderAuthTypes(info, key);
+            return (
             <ProviderCard
               key={key}
               providerId={key}
               provider={info}
-              stats={getProviderStats(key, "oauth")}
-              authType="oauth"
+              stats={getProviderStats(key, authTypes)}
+              authType={Array.isArray(authTypes) ? (authTypes[0] ?? "oauth") : authTypes}
               circuitBreaker={getCircuitBreakerForProvider(key)}
               onResetCircuit={resetCircuitBreaker}
-              onToggle={(active) => handleToggleProvider(key, "oauth", active)}
+              onToggle={(active) => handleToggleProvider(key, authTypes, active)}
             />
-          ))}
+            );
+          })}
         </div>
       </div>
       )}
