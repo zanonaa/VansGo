@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,11 +87,34 @@ jobs:
         run: |
           set -euo pipefail
           base="$(node -p "require('./package.json').version")"
-          # 2.0.0 + número da execução => 2.0.<build>. Cada build publica uma
-          # versão estritamente maior (inclusive na branch de migração) sem
-          # precisar commitar bump em package.json.
+          # 2.1.0 + número da execução => 2.1.<build>. A tag git v2.1.<build> e a
+          # Release acompanham a imagem (abaixo): UM único número de versão para
+          # imagem, tag e Release, sem etapa manual.
           echo "version=${base%.*}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "release=${base}" >> "$GITHUB_OUTPUT"
+
+      # Tag e Release com o MESMO número da imagem publicada; sem isso a tag
+      # manual divergia do número que o painel mostra (ex.: v2.1.35 vs 2.1.90).
+      - name: Tag and release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          tag="v${VERSION}"
+          if git ls-remote --tags origin "refs/tags/${tag}" | grep -q "${tag}"; then
+            echo "Tag ${tag} já existe; pulando"
+            exit 0
+          fi
+          git tag -a "${tag}" -m "Release ${tag} (image ${VERSION})" "${SHA}"
+          git push origin "refs/tags/${tag}"
+          notes="$(git log -1 --format=%s "${SHA}")"
+          printf 'Imagem `ghcr.io/zanonaa/vansgo:%s`\n\n%s\n' "${VERSION}" "${notes}" > /tmp/notes.md
+          gh release create "${tag}" --title "${tag}" --notes-file /tmp/notes.md --target "${SHA}"
 
       - name: Build and publish multi-architecture image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
