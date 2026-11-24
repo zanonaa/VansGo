@@ -133,18 +133,22 @@ export default function ProvidersPage() {
     return name.toLowerCase().includes(searchQuery.trim().toLowerCase());
   };
 
-  const sortByPriority = (entries, authType) =>
-    [...entries].sort(([ka, a], [kb, b]) => {
+  // authTypes may be a fixed string or resolved per provider (dual-auth
+  // providers like glm/kimi persist apikey connections).
+  const sortByPriority = (entries, resolveAuthTypes) => {
+    const resolve = typeof resolveAuthTypes === "function" ? resolveAuthTypes : () => resolveAuthTypes;
+    return [...entries].sort(([ka, a], [kb, b]) => {
       const pa = a.priority ?? 999;
       const pb = b.priority ?? 999;
       if (pa !== pb) return pa - pb;
-      const sa = getProviderStats(ka, authType);
-      const sb = getProviderStats(kb, authType);
+      const sa = getProviderStats(ka, resolve(ka, a));
+      const sb = getProviderStats(kb, resolve(kb, b));
       const ca = sa.connected > 0 ? 1 : 0;
       const cb = sb.connected > 0 ? 1 : 0;
       if (ca !== cb) return cb - ca;
       return (a.name || "").localeCompare(b.name || "");
     });
+  };
 
   const sortItemsByPriority = (items, authType) =>
     [...items].sort((a, b) => {
@@ -317,6 +321,7 @@ export default function ProvidersPage() {
         // modes, same as the Free Tier cards — otherwise the card shows "No
         // connections" while the detail page lists them.
         .filter(([key, info]) => displayFilter === "all" || isActiveProvider(key, getProviderAuthTypes(info, key))),
+      getProviderAuthTypes,
       "oauth",
     );
   }, [matchSearch, displayFilter, isActiveProvider]);
