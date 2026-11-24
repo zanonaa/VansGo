@@ -95,6 +95,8 @@ jobs:
 
       # Tag e Release com o MESMO número da imagem publicada; sem isso a tag
       # manual divergia do número que o painel mostra (ex.: v2.1.35 vs 2.1.90).
+      # Via API do gh: o checkout usa persist-credentials: false e não há
+      # credenciais git para push. gh release create cria a tag no target.
       - name: Tag and release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
@@ -103,15 +105,11 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           tag="v${VERSION}"
-          if git ls-remote --tags origin "refs/tags/${tag}" | grep -q "${tag}"; then
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
             echo "Tag ${tag} já existe; pulando"
             exit 0
           fi
-          git tag -a "${tag}" -m "Release ${tag} (image ${VERSION})" "${SHA}"
-          git push origin "refs/tags/${tag}"
           notes="$(git log -1 --format=%s "${SHA}")"
           printf 'Imagem `ghcr.io/zanonaa/vansgo:%s`\n\n%s\n' "${VERSION}" "${notes}" > /tmp/notes.md
           gh release create "${tag}" --title "${tag}" --notes-file /tmp/notes.md --target "${SHA}"
