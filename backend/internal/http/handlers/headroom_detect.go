@@ -154,7 +154,10 @@ func buildPythonCandidates(binary string) []string {
 func findPython310() string {
 	var fallback string
 	for _, candidate := range buildPythonCandidates(findHeadroomBinary()) {
-		version, ok := runHeadroomCommand(candidate, nil, 0)
+		// Paridade da origem (detect.js): `${candidate} --version`. Sem o
+		// argumento o interpretador abre o REPL, lê EOF e sai sem output —
+		// o regex de versão nunca bate e a detecção sempre falha.
+		version, ok := runHeadroomCommand(candidate, []string{"--version"}, 0)
 		if !ok {
 			continue
 		}
