@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -171,6 +172,7 @@ func (t *TranslatorSend) SendAntigravity(w http.ResponseWriter, r *http.Request,
 	}
 	defer cleanup()
 	refreshTried := false
+	streamRetried := false
 	for {
 		request, err := newRequest()
 		if err != nil {
@@ -210,11 +212,40 @@ func (t *TranslatorSend) SendAntigravity(w http.ResponseWriter, r *http.Request,
 		}
 		if stream {
 			conversion := &streamConversion{destination: w, source: source, target: "gemini", model: model, textBlock: -1, thinkingBlock: -1, serverTool: -1}
-			_, _ = io.Copy(conversion, response.Body)
+			copied, copyErr := io.Copy(conversion, response.Body)
+			// Morte do upstream a meio-stream não pode ser engolida: sem o erro
+			// de transporte, EOF limpo sem finishReason vira apenas "Provider
+			// stream closed before completion" sem causa. Nada emitido ainda
+			// (nenhum frame chegou ao cliente) permite um único retry seguro;
+			// depois disso o cliente já recebeu conteúdo e repetir duplicaria
+			// a resposta.
+			if copyErr != nil && conversion.emitted == 0 && conversion.err == nil && !streamRetried {
+				streamRetried = true
+				last := ""
+				if conversion.lastFrame != nil {
+					last = string(conversion.lastFrame)
+					if len(last) > 400 {
+						last = last[:400]
+					}
+				}
+				slog.Warn("antigravity upstream morreu antes do primeiro frame; repetindo requisição",
+					"erro", copyErr.Error(),
+					"ultimo_frame", last,
+					"modelo", upstream,
+					"bytes_recebidos", copied)
+				response.Body.Close()
+				continue
+			}
+			if copyErr != nil && conversion.err == nil {
+				conversion.err = fmt.Errorf("Provider stream interrupted: %w", copyErr)
+			}
 			conversion.finish()
 		} else {
 			conversion := &convertedResponse{destination: w, source: source, target: "gemini", model: model}
-			_, _ = io.Copy(conversion, response.Body)
+			_, copyErr := io.Copy(conversion, response.Body)
+			if copyErr != nil && conversion.err == nil {
+				conversion.err = fmt.Errorf("Provider response interrupted: %w", copyErr)
+			}
 			conversion.finish()
 		}
 		response.Body.Close()

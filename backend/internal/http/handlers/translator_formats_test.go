@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -122,6 +123,94 @@ func TestSendAntigravityWrapsRequestAndConvertsSSE(t *testing.T) {
 		if _, has := request[leaked]; has {
 			t.Fatalf("campo vazado no request: %s", leaked)
 		}
+	}
+}
+
+// agBrokenStream simula morte de transporte no meio do SSE: um frame parcial
+// chega e a leitura termina com erro (não EOF limpo).
+type agBrokenStream struct{ data string }
+
+func (b *agBrokenStream) Read(p []byte) (int, error) {
+	if b.data != "" {
+		n := copy(p, b.data)
+		b.data = ""
+		return n, nil
+	}
+	return 0, errors.New("read: connection reset by peer")
+}
+
+func TestSendAntigravityRetriesWhenUpstreamDiesBeforeFirstFrame(t *testing.T) {
+	attempts := 0
+	fetched := 0
+	sender := &TranslatorSend{
+		Connections: sendConnections{items: []map[string]any{{
+			"isActive":             true,
+			"accessToken":          "oauth-token",
+			"email":                "user@example.com",
+			"providerSpecificData": map[string]any{"projectId": "proj-1"},
+		}}},
+		Client: &http.Client{Transport: agModelsTransport(t, func(r *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return &http.Response{
+					StatusCode: 200,
+					Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+					// Frame INCOMPLETO (sem \n\n final) seguido de morte de
+					// transporte: nada foi emitido pro cliente ainda.
+					Body: io.NopCloser(&agBrokenStream{data: "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"par\"}]}}]}"}),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: 200,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1}}\n\n")),
+			}, nil
+		}, &fetched)},
+	}
+	w := httptest.NewRecorder()
+	sender.SendAntigravity(w, httptest.NewRequest("POST", "/v1/chat/completions", nil), "antigravity", "gemini-3-flash", map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+		"stream":   true,
+	}, "openai", true)
+	if attempts != 2 {
+		t.Fatalf("esperava retry único (2 tentativas), tive %d", attempts)
+	}
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"content":"ok"`) || strings.Contains(w.Body.String(), "stream_conversion_error") {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSendAntigravitySurfacesTransportErrorMidStream(t *testing.T) {
+	fetched := 0
+	sender := &TranslatorSend{
+		Connections: sendConnections{items: []map[string]any{{
+			"isActive":             true,
+			"accessToken":          "oauth-token",
+			"email":                "user@example.com",
+			"providerSpecificData": map[string]any{"projectId": "proj-1"},
+		}}},
+		Client: &http.Client{Transport: agModelsTransport(t, func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: 200,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				// Frame completo (emitted > 0) seguido de morte de transporte:
+				// retry proibido, causa precisa aparecer no SSE de erro.
+				Body: io.NopCloser(&agBrokenStream{data: "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"visivel\"}]}}]}\n\n"}),
+			}, nil
+		}, &fetched)},
+	}
+	w := httptest.NewRecorder()
+	sender.SendAntigravity(w, httptest.NewRequest("POST", "/v1/chat/completions", nil), "antigravity", "gemini-3-flash", map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+		"stream":   true,
+	}, "openai", true)
+	body := w.Body.String()
+	if !strings.Contains(body, `"content":"visivel"`) {
+		t.Fatalf("primeiro frame deveria ter passado ao cliente: %s", body)
+	}
+	if !strings.Contains(body, "stream_conversion_error") || !strings.Contains(body, "connection reset by peer") {
+		t.Fatalf("causa de transporte deveria aparecer no SSE de erro: %s", body)
 	}
 }
 
