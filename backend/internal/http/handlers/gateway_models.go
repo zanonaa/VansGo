@@ -75,6 +75,14 @@ func (g *Gateway) enabledModelProviders(r *http.Request) (map[string]bool, error
 	for _, connection := range connections {
 		enabled[ttsString(connection["provider"])] = true
 	}
+	// Conexões são gravadas por id (antigravity) mas o catálogo de modelos é
+	// chaveado pelo alias (ag); propagar enabled para os aliases cobre os dois
+	// lookups (catalogModels checa por alias, o chat checa por id).
+	for alias, id := range providers.AliasMap() {
+		if enabled[id] {
+			enabled[alias] = true
+		}
+	}
 	for _, entry := range providers.Catalog() {
 		if entry.NoAuth {
 			enabled[entry.ID] = true
@@ -95,7 +103,8 @@ func (g *Gateway) modelVisibleToKey(r *http.Request, provider string) (bool, err
 	return enabled[provider], nil
 }
 
-func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {	w.Header().Set("Access-Control-Allow-Origin", "*")
+func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	key, ok := g.modelAuth(w, r)
 	if !ok {
 		return
@@ -110,6 +119,13 @@ func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {	w.Head
 	for _, connection := range connections {
 		enabled[ttsString(connection["provider"])] = true
 	}
+	// Mesma propagação do enabledModelProviders: conexão por id (antigravity)
+	// habilita o alias (ag) usado como chave do catálogo de modelos.
+	for alias, id := range providers.AliasMap() {
+		if enabled[id] {
+			enabled[alias] = true
+		}
+	}
 	aliases := map[string]string{}
 	for _, entry := range providers.Catalog() {
 		alias := entry.ID
@@ -123,6 +139,19 @@ func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {	w.Head
 	}
 	data := []map[string]any{}
 	seen := map[string]bool{}
+	// Antigravity é 100% dinâmico: o listing vem do fetchAvailableModels do
+	// upstream (cache 5 min). Falha de rede/quota não derruba o endpoint —
+	// só os models ag não aparecem nessa passagem.
+	if enabled["ag"] && gatewayPermission(key, "allowedProviders", "ag") && gatewayPermission(key, "allowedKinds", "llm") {
+		if connection := agActiveConnection(r, g); connection != nil {
+			if entry, err := agAvailableModels(r.Context(), connection, g.Client); err == nil {
+				data = append(data, entry.models...)
+				for _, id := range entry.ids {
+					seen["ag/"+id] = true
+				}
+			}
+		}
+	}
 	// Combos primeiro, como na origem (src/sse/services/allowedModels.js): são
 	// modelos virtuais que o cliente OpenAI-compatible precisa enxergar para
 	// selecioná-los. Sem isso o /v1/models só listava o catálogo dos providers.
@@ -152,6 +181,11 @@ func (g *Gateway) catalogModels(w http.ResponseWriter, r *http.Request) {	w.Head
 	}
 	for _, model := range providers.CatalogModels().Models {
 		provider, id := ttsString(model["provider"]), ttsString(model["model"])
+		// Antigravity usa listing dinâmico (agAvailableModels); o snapshot
+		// embutido não entra no /v1/models.
+		if provider == "antigravity" {
+			continue
+		}
 		if !enabled[provider] || id == "" || !gatewayPermission(key, "allowedProviders", provider) || !gatewayPermission(key, "allowedKinds", "llm") {
 			continue
 		}

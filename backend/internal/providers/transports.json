@@ -305,6 +305,15 @@
     "auth": null,
     "noAuth": false
   },
+  "antigravity": {
+    "baseUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal",
+    "format": "antigravity",
+    "headers": {
+      "User-Agent": "antigravity/ide/2.1.1 darwin/arm64"
+    },
+    "auth": null,
+    "noAuth": false
+  },
   "gemini-cli": {
     "baseUrl": "https://cloudcode-pa.googleapis.com/v1internal",
     "format": "gemini-cli",

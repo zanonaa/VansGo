@@ -248,6 +248,13 @@ func (g *Gateway) OpenAIChat(w http.ResponseWriter, r *http.Request) {
 		g.Send.SendGeminiCLI(w, r, provider, model, body, source, stream)
 		return
 	}
+	// Antigravity IDE: mesma família Cloud Code Assist (corpo Gemini no
+	// wrapper {project, model, requestId, request}), com transform próprio da
+	// IDE (whitelist, schema-clean de tools, thoughtSignature).
+	if format == "antigravity" {
+		g.Send.SendAntigravity(w, r, provider, model, body, source, stream)
+		return
+	}
 	// Vertex AI: mesmo corpo Gemini, mas URL/auth por projeto ou API key.
 	if format == "vertex" {
 		g.Send.SendVertex(w, r, provider, model, body, source, stream)
