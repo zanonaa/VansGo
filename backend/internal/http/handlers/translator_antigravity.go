@@ -21,8 +21,9 @@ import (
 // executor aplica as transformações que a IDE Antigravity faz antes de falar
 // com o protobuf do Google: whitelist de campos do request, sanitização de
 // function names, schema-clean das tools, reescrita de prompts de clientes
-// concorrentes e backfill de thoughtSignature no primeiro functionCall
-// (Gemini 3+ rejeita functionCall sem assinatura).
+// concorrentes e backfill de thoughtSignature em functionCalls sem assinatura
+// (Gemini 3+ rejeita functionCall sem assinatura; a origem usa a default no
+// primeiro e o sentinel de bypass nos subsequentes).
 const (
 	// Identidade do cliente: User-Agent do CLI agy (agCliUserAgent, formato em
 	// ag_headers.go). Allowlist do upstream é dinâmica/temporal: o UA do IDE
@@ -44,6 +45,11 @@ var (
 	agClaudeAgentPrompt = "You are a Claude agent, built on Anthropic's Claude Agent SDK."
 	// DEFAULT_THINKING_AG_SIGNATURE de config/defaultThinkingSignature.js.
 	agDefaultSignature = "EuwGCukGAXLI2nxwZIq54WWSoL/YN0P3TsDZ7zRnLi8g0S4aVr2HUGxvaHKySuY6HAVzcE0GPGjXrytLIldxthSvfxgUlJh6Qa9Z+Oj5QZBlYdg6HaJ6yuY5R7waE6rdwBsRf7Ft2j3DJ9rMi9qhWFqApewYtPhls3VHtuvND3l8Rm09+lbAXQs6KKWEWrxNLKTBkfpMgXhRERc/TQRMZu1twAablm6/Zk1tsYRvfWKLsNbeKF+CCojJdXJKvnR/8Ouuoa+Y2Ti20hcW7aZIIjZDFYPU//k6Ybmhg69J/imbFai2ckhfLaisqdDkdoIiBJScTOUvYqP6AE9d4MsydSC+UlhIMk4hoP76R8vUSCZRMkjOaDXstf/QoVZKbt94wyRZgAJ1G0BqI8L5ow86kLpA4wJEtxsRGymOE4bKUvApveBakYDNM9APkf+LbtbzWSseGjoZcSlycF9iN8Q2XNYKRrHbv3Lr5Y8JjdH/5y/6SHkNehTEZugaeGnSPSyCTWto1kQgHpxdWmhkLfJGNUGLmue7Mesj4TSms4J33mRpYVhNB/J333FCqIP0hr/E7BkkjEn7yZ4X7SQlh+xKPurapsnHRwiKmtsilmEFrnTE9iQr+pMr6M29qqFNv1tr5yumbaJw8JW9sB15tNsRv+dW6BjNanbsKz7HCgKUBc8tGy+7YuhXzAfViyRefcjK7eZW0Fbyt7AbybJTKz78W8NH7ye6LAwzOebXpeZ4D43fNIt8bKh26qgduSQv/7o+pAflkuqHZ99YWgHQ8h8OkZFi3eOiSYjsjhdZ/czWOdoPI/OnqIldzMPF5YlrKBLFX8VhRKVmqgsmWf5PHGulHhMkVlS+XG2UIseGy69ARa93D78Gsa+1n1kJr7EEB7Rh+27vUMxVYLdz1yMSvE5nalTAlg/ZeG8+XQ0cHuAI3KbQpHW2Q++RdXfm5JzD5WdJZUU+Zn8t8UUn85BH4RxZLeE0qJikgSsKoYVBc6YhiMjhPgkR95ReimY4Z0xCJdRo1gjexOFeODZMpQF6Yxnoic7IrdgsFA3iePTbFnPp3IAM1fAThWhXJUn3QInUOTd5o1qmTmn6REbL15g/JQNl+dqUoPkhleeb2V3kjqp1okmO3wMZbPknR3S1LZNmlS72/iBQUm+n2b/RCn4PjmM2"
+	// Sentinel do bypass antigravity (origem: openai-to-gemini.ts, issue #1410
+	// que supersedeu a #725): functionCalls históricos sem assinatura real —
+	// clientes OpenAI-compatíveis não carregam thoughtSignature — são aceitos
+	// pelo upstream quando carregam este valor.
+	agSignatureBypass = "skip_thought_signature_validator"
 )
 
 var (
@@ -298,8 +304,10 @@ func agRewriteSystemPrompts(request map[string]any) {
 }
 
 // agFixContents replica o map de contents da origem: functionResponse vira
-// role "user", parts thought-only são descartadas (mantendo functionCall) e o
-// primeiro functionCall recebe o thoughtSignature default (Gemini 3+).
+// role "user", parts thought-only são descartadas (mantendo functionCall) e
+// functionCalls sem thoughtSignature recebem backfill — a assinatura default
+// no primeiro e o sentinel de bypass nos demais (Gemini 3+ rejeita functionCall
+// sem assinatura; o upstream só tolera a fake histórica no 1º).
 func agFixContents(raw any) []any {
 	list, _ := raw.([]any)
 	firstFunctionCallSeen := false
@@ -332,8 +340,16 @@ func agFixContents(raw any) []any {
 				}
 			}
 			if isCall {
-				if _, hasSig := part["thoughtSignature"]; !hasSig && !firstFunctionCallSeen {
-					part["thoughtSignature"] = agDefaultSignature
+				// A origem supriu a assinatura fake apenas no primeiro
+				// functionCall (issue #725), mas o upstream passou a rejeitar
+				// os subsequentes sem assinatura (superseded pela #1410): o
+				// bypass sentinel cobre qualquer functionCall sem assinatura.
+				if _, hasSig := part["thoughtSignature"]; !hasSig {
+					if !firstFunctionCallSeen {
+						part["thoughtSignature"] = agDefaultSignature
+					} else {
+						part["thoughtSignature"] = agSignatureBypass
+					}
 				}
 				firstFunctionCallSeen = true
 			}
