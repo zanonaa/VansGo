@@ -30,6 +30,8 @@ import {
   isCodexUnavailable401,
   getQuotaModelKey,
   filterQuotasByModel,
+  splitAntigravityFamilyQuotas,
+  EMPTY_FAMILY_SPLIT,
   QUOTA_CACHE_KEY,
   REFRESH_INTERVAL_MS,
   CLAUDE_REFRESH_INTERVAL_MS,
@@ -710,6 +712,20 @@ export default function ProviderLimits() {
     [connections, quotaData, expiringFirst, providerFilter, quotaSortMode],
   );
 
+  // agy-style family groups (Gemini / Claude & GPT / …) for every antigravity
+  // connection with quota data, keyed by connection id.
+  const antigravitySplits = useMemo(() => {
+    const splits = new Map();
+    connections.forEach((conn) => {
+      if (conn.provider !== "antigravity") return;
+      splits.set(
+        conn.id,
+        splitAntigravityFamilyQuotas(quotaData[conn.id]?.quotas),
+      );
+    });
+    return splits;
+  }, [connections, quotaData]);
+
   // Connection is depleted when any quota entry hit the threshold
   const isConnectionDepleted = (conn) => {
     const quotas = quotaData[conn.id]?.quotas;
@@ -1159,6 +1175,10 @@ export default function ProviderLimits() {
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
+          const antigravitySplit =
+            conn.provider === "antigravity"
+              ? antigravitySplits.get(conn.id) || EMPTY_FAMILY_SPLIT
+              : EMPTY_FAMILY_SPLIT;
 
           return (
             <Card
@@ -1382,11 +1402,19 @@ export default function ProviderLimits() {
                   </div>
                 ) : (
                   <QuotaTable
-                    quotas={filterQuotasByModel(quota?.quotas, modelFilter)}
+                    quotas={filterQuotasByModel(
+                      antigravitySplit.models,
+                      modelFilter,
+                    )}
                     compact
                     sortMode="default"
                     showSortLabel={
                       conn.provider === "codex" && quotaSortMode !== "default"
+                    }
+                    antigravityGroups={
+                      modelFilter === "all"
+                        ? antigravitySplit.groups
+                        : EMPTY_FAMILY_SPLIT.groups
                     }
                   />
                 )}
