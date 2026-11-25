@@ -1,9 +1,9 @@
 import { getModelsByProviderId } from "@/config/providerModels.js";
 
-// Providers whose usage endpoint returns per-model quota rows.
-// The model filter dropdown is shown only for these providers.
+// Providers with a per-model filter dropdown in the usage panel.
+// antigravity renders agy-style family groups only (no per-model rows),
+// so it does not take part in the filter.
 export const MULTI_MODEL_PROVIDERS = new Set([
-  "antigravity",
   "gemini-cli",
 ]);
 

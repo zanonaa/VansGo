@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "@/compat/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
-import QuotaTable from "./QuotaTable";
+import QuotaTable, { AntigravityFamilyGroups } from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
 import {
@@ -1400,22 +1400,20 @@ export default function ProviderLimits() {
                   <div className="text-center py-5">
                     <p className="text-xs text-text-muted">{quota.message}</p>
                   </div>
+                ) : conn.provider === "antigravity" ? (
+                  // agy-style: family groups only (Gemini, Claude & GPT, …).
+                  // The backend's ~37 per-model rows are intentionally not
+                  // rendered; the same data drives the group windows.
+                  <AntigravityFamilyGroups
+                    groups={antigravitySplit.groups}
+                    compact
+                  />
                 ) : (
                   <QuotaTable
-                    quotas={filterQuotasByModel(
-                      antigravitySplit.models,
-                      modelFilter,
-                    )}
+                    quotas={filterQuotasByModel(quota?.quotas, modelFilter)}
                     compact
                     sortMode="default"
-                    showSortLabel={
-                      conn.provider === "codex" && quotaSortMode !== "default"
-                    }
-                    antigravityGroups={
-                      modelFilter === "all"
-                        ? antigravitySplit.groups
-                        : EMPTY_FAMILY_SPLIT.groups
-                    }
+                    showSortLabel={isCodex && quotaSortMode !== "default"}
                   />
                 )}
               </div>
