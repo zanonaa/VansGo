@@ -24,10 +24,12 @@ import (
 // concorrentes e backfill de thoughtSignature no primeiro functionCall
 // (Gemini 3+ rejeita functionCall sem assinatura).
 const (
-	// Allowlist do upstream: só versões exatas anunciadas pelo IDE passam
-	// (2.1.1 passou a responder "This version of Antigravity is no longer
-	// supported"; 2.3.0 é aceita — validado contra o streamGenerateContent).
-	agUserAgent       = "antigravity/ide/2.3.0 darwin/arm64"
+	// Identidade do cliente: espelha o User-Agent do IDE standalone
+	// (product.json ideVersion; construção em out/main.js userAgent():
+	// `${"antigravity"|"jetski"}/${ideVersion} ${platform}/${arch}`, sem o
+	// segmento `ide/` antigo). Allowlist do upstream é dinâmica/temporal —
+	// validar contra o streamGenerateContent antes de qualquer bump.
+	agUserAgent       = "antigravity/2.8.0 linux/amd64"
 	agMaxOutputTokens = 16384.0
 	// COMPETITIVE_CLAUDE_AGENT_PROMPT: prompts de clientes concorrentes fazem o
 	// upstream marcar o request com 429 Quota Exhausted mesmo com quota.

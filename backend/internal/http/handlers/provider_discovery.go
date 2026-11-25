@@ -81,6 +81,23 @@ func (d *ProviderDiscovery) Get(w http.ResponseWriter, r *http.Request) {
 				target = "https://" + strings.TrimSuffix(resource, "/") + "/v1/models"
 			}
 		}
+	case "antigravity":
+		// Catálogo 100% dinâmico: o mesmo fetchAvailableModels que alimenta
+		// o /v1/models do gateway (POST no host daily; genérico GET não serve).
+		entry, err := agAvailableModels(r.Context(), connection, d.Client)
+		if err != nil {
+			nodeReply(w, 502, map[string]any{"error": fmt.Sprintf("Failed to fetch models: %v", err)})
+			return
+		}
+		models := make([]any, 0, len(entry.models))
+		for _, item := range entry.models {
+			models = append(models, map[string]any{
+				"id":   strings.TrimPrefix(ttsString(item["id"]), "ag/"),
+				"name": item["name"],
+			})
+		}
+		nodeReply(w, 200, map[string]any{"provider": provider, "connectionId": connection["id"], "models": models})
+		return
 	}
 	if target == "" {
 		nodeReply(w, 400, map[string]any{"error": fmt.Sprintf("Provider %s does not support models listing", provider)})
