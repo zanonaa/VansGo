@@ -6,6 +6,8 @@ import { describe, it, expect } from "vitest";
 import {
   parseQuotaData,
   splitAntigravityFamilyQuotas,
+  isMultiModelProvider,
+  getModelOptionsForProvider,
 } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
 
 const FAMILY_WINDOWS = {
@@ -153,6 +155,15 @@ describe("antigravity family quota groups", () => {
       groups: [],
       models: [],
     });
+  });
+
+  it("keeps antigravity out of the per-model filter (groups-only card)", () => {
+    // Regression guard: antigravity renders agy-style groups only, so it must
+    // not appear in the filter dropdown (that would leave its card empty).
+    expect(isMultiModelProvider("antigravity")).toBe(false);
+    expect(getModelOptionsForProvider("antigravity")).toEqual([]);
+    // gemini-cli still has per-model rows and keeps the filter.
+    expect(isMultiModelProvider("gemini-cli")).toBe(true);
   });
 });
 
