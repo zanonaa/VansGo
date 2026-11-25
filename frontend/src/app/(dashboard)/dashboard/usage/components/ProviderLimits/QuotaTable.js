@@ -84,6 +84,115 @@ function sortQuotas(quotas, sortMode) {
 const EMPTY_QUOTAS = [];
 
 /**
+ * Get color classes for the antigravity family group bars
+ */
+function getFamilyColorClasses(remainingPercentage) {
+  if (remainingPercentage > 70) return "bg-green-500";
+  if (remainingPercentage >= 30) return "bg-yellow-500";
+  return "bg-red-500";
+}
+
+function FamilyWindowBar({ label, quota, compact }) {
+  if (!quota) {
+    return (
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2 text-[10px]">
+          <span className="font-medium text-text-muted">{label}</span>
+          <span className="text-text-muted">N/A</span>
+        </div>
+      </div>
+    );
+  }
+
+  const remaining = getRemainingPercentage(quota);
+  const isUnlimited = quota?.unlimited === true;
+  const barColor = getFamilyColorClasses(remaining);
+  const used = quota?.used ?? 0;
+
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center justify-between gap-2 text-[10px]">
+        <span className="font-medium text-text-muted">{label}</span>
+        {isUnlimited ? (
+          <span className="font-medium text-green-600 dark:text-green-400">
+            Unlimited
+          </span>
+        ) : (
+          <span
+            className={`font-medium ${
+              remaining > 70
+                ? "text-green-600 dark:text-green-400"
+                : remaining >= 30
+                  ? "text-yellow-600 dark:text-yellow-400"
+                  : "text-red-600 dark:text-red-400"
+            }`}
+          >
+            {remaining}%
+          </span>
+        )}
+      </div>
+      {!isUnlimited && (
+        <div
+          className={`mt-1 rounded-full overflow-hidden border ${compact ? "h-1" : "h-1.5"} ${
+            remaining === 0
+              ? "border-black/10 dark:border-white/10"
+              : "border-transparent"
+          }`}
+        >
+          <div
+            className={`h-full transition-all duration-300 ${barColor}`}
+            style={{ width: `${Math.min(remaining, 100)}%` }}
+          />
+        </div>
+      )}
+      <div className="mt-0.5 text-[10px] text-text-muted">
+        {isUnlimited
+          ? `${used.toLocaleString()} used`
+          : `${used.toLocaleString()} / ${(quota?.total ?? 0).toLocaleString()}`}
+        {quota?.resetAt
+          ? ` · resets ${formatResetTimeDisplay(quota.resetAt)}`
+          : ""}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Antigravity family quota groups (agy-style): one card per family (Gemini,
+ * Claude & GPT, …) with the 5h session and weekly windows side by side.
+ */
+export function AntigravityFamilyGroups({ groups = EMPTY_QUOTAS, compact = false }) {
+  if (!groups || groups.length === 0) return null;
+
+  return (
+    <div className={compact ? "space-y-1.5" : "space-y-2"}>
+      {groups.map((group) => (
+        <div
+          key={group.id}
+          className="rounded-md border border-black/10 bg-black/[0.02] px-2 py-1.5 dark:border-white/10 dark:bg-white/[0.03]"
+        >
+          <div className="text-[11px] font-semibold text-text-primary">
+            {group.label}
+          </div>
+          <div className="mt-1 flex items-start gap-3">
+            <FamilyWindowBar
+              label="5h session"
+              quota={group.session}
+              compact={compact}
+            />
+            <FamilyWindowBar
+              label="Weekly"
+              quota={group.weekly}
+              compact={compact}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Quota Table Component - Table-based display for quota data
  */
 export default function QuotaTable({
@@ -91,6 +200,7 @@ export default function QuotaTable({
   compact = false,
   sortMode = "default",
   showSortLabel = false,
+  antigravityGroups = null,
 }) {
   const [page, setPage] = useState(1);
 
@@ -152,6 +262,10 @@ export default function QuotaTable({
           </div>
         )}
       </div>
+
+      {antigravityGroups && antigravityGroups.length > 0 && (
+        <AntigravityFamilyGroups groups={antigravityGroups} compact={compact} />
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[420px] table-fixed text-left">

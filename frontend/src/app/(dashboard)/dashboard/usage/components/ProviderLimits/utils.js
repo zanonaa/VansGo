@@ -7,6 +7,10 @@ export const MULTI_MODEL_PROVIDERS = new Set([
   "gemini-cli",
 ]);
 
+// Empty split shared by antigravity cards without quota data (stable reference
+// keeps the useMemo dependency cheap and QuotaTable's props unchanged).
+export const EMPTY_FAMILY_SPLIT = { groups: [], models: [] };
+
 /**
  * Build model filter options for a given provider.
  * @param {string} provider - Provider id
@@ -389,6 +393,7 @@ export function parseQuotaData(provider, data) {
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
+              unlimited: quota.unlimited === true,
             });
           });
         }
@@ -622,4 +627,73 @@ export function parseQuotaData(provider, data) {
   }
 
   return normalizedQuotas;
+}
+
+// ─── Antigravity family quota groups (agy-style) ────────────────────────────
+
+/**
+ * Family window keys returned by the antigravity usage endpoint.
+ * Keys follow the backend shape `<family>_<window>` with windows 5h ("session")
+ * and weekly; per-model rows never carry that suffix.
+ */
+const AG_FAMILY_PATTERN = /_(session|weekly)$/;
+
+/**
+ * Split antigravity quota rows into family-window groups (Gemini / Claude & GPT
+ * / Gemini 4 Argon — agy's two bars per group) plus the remaining per-model
+ * rows. Family entries carry a `displayName` from the backend, but grouping is
+ * keyed by the row key (`<family>_<window>`) so mixed label locales cannot
+ * split a group in two.
+ * @param {Array<Object>} quotas - Normalized quota rows from parseQuotaData
+ * @returns {{ groups: Array<{id: string, label: string, session: Object|null, weekly: Object|null}>, models: Array<Object> }}
+ */
+export function splitAntigravityFamilyQuotas(quotas) {
+  const groups = [];
+  const models = [];
+
+  (quotas || []).forEach((quota) => {
+    const key = quota?.modelKey || "";
+    const match = key.match(AG_FAMILY_PATTERN);
+    if (!match) {
+      models.push(quota);
+      return;
+    }
+
+    const family = key.slice(0, match.index);
+    const window = match[1];
+    let group = groups.find((candidate) => candidate.id === family);
+    if (!group) {
+      group = {
+        id: family,
+        label: familyToLabel(family),
+        session: null,
+        weekly: null,
+      };
+      groups.push(group);
+    }
+    group[window === "weekly" ? "weekly" : "session"] = quota;
+  });
+
+  return { groups, models };
+}
+
+/**
+ * Map a family id (gemini, claude_gpt, gemini_4_argon, …) to its display label.
+ * Falls back to a title-cased version of the id for future families.
+ * @param {string} family - Family id from the `<family>_<window>` key
+ * @returns {string}
+ */
+function familyToLabel(family) {
+  const labels = {
+    gemini: "Gemini",
+    claude_gpt: "Claude & GPT",
+    gemini_4_argon: "Gemini 4 Argon",
+  };
+  return (
+    labels[family] ||
+    family
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ")
+  );
 }
