@@ -50,7 +50,7 @@ func agModelsTransport(t *testing.T, chat func(*http.Request) (*http.Response, e
 			if r.Method != http.MethodPost {
 				t.Fatalf("discovery method: %s", r.Method)
 			}
-			if r.Header.Get("Authorization") != "Bearer oauth-token" || r.Header.Get("User-Agent") != "antigravity/ide/2.3.0 darwin/arm64" {
+			if r.Header.Get("Authorization") != "Bearer oauth-token" || r.Header.Get("User-Agent") != agUserAgent {
 				t.Fatalf("discovery headers: %v", r.Header)
 			}
 			if fetched != nil {
