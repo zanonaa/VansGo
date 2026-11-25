@@ -309,7 +309,7 @@
     "baseUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal",
     "format": "antigravity",
     "headers": {
-      "User-Agent": "antigravity/ide/2.1.1 darwin/arm64"
+      "User-Agent": "antigravity/ide/2.3.0 darwin/arm64"
     },
     "auth": null,
     "noAuth": false

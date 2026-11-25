@@ -242,7 +242,9 @@ func agExcludeID(id string) bool {
 }
 
 // agDisplayName prefere o displayName do upstream; no fanout tiered adiciona
-// o sufixo do nível ("Gemini 3.8 Flash (High)"), igual aos nomes do IDE.
+// o sufixo do nível ("Gemini 3.8 Flash (High)"), igual aos nomes do IDE —
+// mas só quando o upstream ainda não inclui o nível no displayName (os ids
+// claude-* já vêm com "(Low)" do fetchAvailableModels).
 func agDisplayName(public string, meta map[string]any) string {
 	name := strings.TrimSpace(ttsString(meta["displayName"]))
 	if name == "" {
@@ -250,7 +252,9 @@ func agDisplayName(public string, meta map[string]any) string {
 	}
 	if level := agTierLevel(public); level != "" {
 		capitalized := strings.ToUpper(level[:1]) + level[1:]
-		name += " (" + capitalized + ")"
+		if !strings.Contains(strings.ToLower(name), strings.ToLower("("+capitalized+")")) {
+			name += " (" + capitalized + ")"
+		}
 	}
 	return name
 }

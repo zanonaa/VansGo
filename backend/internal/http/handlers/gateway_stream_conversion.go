@@ -232,6 +232,11 @@ func (s *streamConversion) toOpenAI(event map[string]any) error {
 			return s.stop()
 		}
 	case "gemini":
+		// Antigravity embrulha cada chunk SSE em {"response": {...}} (a origem
+		// faz chunk.response || chunk); gemini-cli vem sem envelope.
+		if wrapped, ok := event["response"].(map[string]any); ok {
+			event = wrapped
+		}
 		if event["responseId"] != nil {
 			s.id = event["responseId"]
 		}

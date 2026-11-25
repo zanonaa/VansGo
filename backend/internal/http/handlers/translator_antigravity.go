@@ -24,7 +24,10 @@ import (
 // concorrentes e backfill de thoughtSignature no primeiro functionCall
 // (Gemini 3+ rejeita functionCall sem assinatura).
 const (
-	agUserAgent       = "antigravity/ide/2.1.1 darwin/arm64"
+	// Allowlist do upstream: só versões exatas anunciadas pelo IDE passam
+	// (2.1.1 passou a responder "This version of Antigravity is no longer
+	// supported"; 2.3.0 é aceita — validado contra o streamGenerateContent).
+	agUserAgent       = "antigravity/ide/2.3.0 darwin/arm64"
 	agMaxOutputTokens = 16384.0
 	// COMPETITIVE_CLAUDE_AGENT_PROMPT: prompts de clientes concorrentes fazem o
 	// upstream marcar o request com 429 Quota Exhausted mesmo com quota.

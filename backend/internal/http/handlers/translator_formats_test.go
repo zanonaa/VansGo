@@ -74,7 +74,7 @@ func TestSendAntigravityWrapsRequestAndConvertsSSE(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer oauth-token" {
 				t.Fatalf("auth: %s", r.Header.Get("Authorization"))
 			}
-			if r.Header.Get("User-Agent") != "antigravity/ide/2.1.1 darwin/arm64" {
+			if r.Header.Get("User-Agent") != "antigravity/ide/2.3.0 darwin/arm64" {
 				t.Fatalf("ua: %s", r.Header.Get("User-Agent"))
 			}
 			if err := json.NewDecoder(r.Body).Decode(&received); err != nil {

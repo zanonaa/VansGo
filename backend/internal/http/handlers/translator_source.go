@@ -92,7 +92,7 @@ func translateSource(body map[string]any, format string) (map[string]any, error)
 	case "gemini":
 		if system, ok := source["systemInstruction"].(map[string]any); ok {
 			parts, _ := system["parts"].([]any)
-			blocks, _, _, err := geminiParts(parts)
+			blocks, _, _, _, err := geminiParts(parts)
 			if err != nil {
 				return nil, err
 			}
@@ -111,7 +111,7 @@ func translateSource(body map[string]any, format string) (map[string]any, error)
 			if !ok {
 				return nil, fmt.Errorf("Gemini parts must be an array")
 			}
-			blocks, calls, results, err := geminiParts(parts)
+			blocks, calls, results, _, err := geminiParts(parts)
 			if err != nil {
 				return nil, err
 			}
@@ -236,16 +236,20 @@ func claudeContent(content any) ([]any, []any, []any, error) {
 	return blocks, calls, results, nil
 }
 
-func geminiParts(parts []any) ([]any, []any, []any, error) {
+func geminiParts(parts []any) ([]any, []any, []any, string, error) {
 	blocks, calls, results := []any{}, []any{}, []any{}
+	reasoning := ""
 	for _, raw := range parts {
 		part, ok := raw.(map[string]any)
 		if !ok {
-			return nil, nil, nil, fmt.Errorf("Invalid Gemini part")
+			return nil, nil, nil, "", fmt.Errorf("Invalid Gemini part")
 		}
 		if text, ok := part["text"].(string); ok {
 			if part["thought"] == true {
-				return nil, nil, nil, fmt.Errorf("Gemini thought part requires reasoning mapping")
+				// Thinking interno do model (gemini-to-openai da origem:
+				// vira reasoning_delta / reasoning_content, nunca content).
+				reasoning += text
+				continue
 			}
 			blocks = append(blocks, map[string]any{"type": "text", "text": text})
 			continue
@@ -253,7 +257,7 @@ func geminiParts(parts []any) ([]any, []any, []any, error) {
 		if inline, ok := part["inlineData"].(map[string]any); ok {
 			mime := ttsString(inline["mimeType"])
 			if !strings.HasPrefix(mime, "image/") {
-				return nil, nil, nil, fmt.Errorf("Unsupported Gemini inline media: %s", mime)
+				return nil, nil, nil, "", fmt.Errorf("Unsupported Gemini inline media: %s", mime)
 			}
 			blocks = append(blocks, map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:" + mime + ";base64," + ttsString(inline["data"])}})
 			continue
@@ -261,7 +265,7 @@ func geminiParts(parts []any) ([]any, []any, []any, error) {
 		if function, ok := part["functionCall"].(map[string]any); ok {
 			arguments, err := json.Marshal(function["args"])
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, "", err
 			}
 			id := ttsString(function["id"])
 			if id == "" {
@@ -273,7 +277,7 @@ func geminiParts(parts []any) ([]any, []any, []any, error) {
 		if function, ok := part["functionResponse"].(map[string]any); ok {
 			encoded, err := json.Marshal(function["response"])
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, "", err
 			}
 			id := ttsString(function["id"])
 			if id == "" {
@@ -282,9 +286,9 @@ func geminiParts(parts []any) ([]any, []any, []any, error) {
 			results = append(results, map[string]any{"role": "tool", "tool_call_id": id, "name": function["name"], "content": string(encoded)})
 			continue
 		}
-		return nil, nil, nil, fmt.Errorf("Unsupported Gemini part")
+		return nil, nil, nil, "", fmt.Errorf("Unsupported Gemini part")
 	}
-	return blocks, calls, results, nil
+	return blocks, calls, results, reasoning, nil
 }
 
 func responsesToIntermediate(source map[string]any) (map[string]any, error) {

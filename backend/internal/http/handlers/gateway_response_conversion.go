@@ -178,6 +178,11 @@ func convertChatResponse(native map[string]any, from, to, model string) (map[str
 		prompt, completion := pxpipeNum(rawUsage["input_tokens"]), pxpipeNum(rawUsage["output_tokens"])
 		usage = map[string]any{"prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": prompt + completion}
 	case "gemini":
+		// Antigravity embrulha o corpo em {"response": {...}} (a origem faz
+		// chunk.response || chunk); gemini-cli vem sem envelope.
+		if wrapped, ok := native["response"].(map[string]any); ok {
+			native = wrapped
+		}
 		candidates, _ := native["candidates"].([]any)
 		if len(candidates) == 0 {
 			return nil, fmt.Errorf("Provider returned no Gemini candidates")
@@ -185,11 +190,14 @@ func convertChatResponse(native map[string]any, from, to, model string) (map[str
 		candidate, _ := candidates[0].(map[string]any)
 		content, _ := candidate["content"].(map[string]any)
 		parts, _ := content["parts"].([]any)
-		blocks, calls, _, err := geminiParts(parts)
+		blocks, calls, _, reasoning, err := geminiParts(parts)
 		if err != nil {
 			return nil, err
 		}
 		message["content"] = collapseSourceText(blocks)
+		if reasoning != "" {
+			message["reasoning_content"] = reasoning
+		}
 		if len(calls) > 0 {
 			message["tool_calls"] = calls
 			finish = "tool_calls"
