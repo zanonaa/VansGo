@@ -14,6 +14,7 @@ type convertedResponse struct {
 	status                int
 	body                  []byte
 	source, target, model string
+	err                   error
 }
 
 func (c *convertedResponse) Header() http.Header {
@@ -40,6 +41,10 @@ func (c *convertedResponse) Write(body []byte) (int, error) {
 func (c *convertedResponse) finish() {
 	if c.status == 0 {
 		c.status = 200
+	}
+	if c.err != nil {
+		nodeReply(c.destination, 502, map[string]any{"error": map[string]any{"message": c.err.Error()}})
+		return
 	}
 	if c.status < 200 || c.status >= 300 {
 		for k, v := range c.header {

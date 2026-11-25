@@ -28,6 +28,8 @@ type streamConversion struct {
 	toolIDs               map[string]int
 	toolCount             int
 	err                   error
+	lastFrame             []byte
+	emitted               int
 	responses             *responsesStream
 }
 
@@ -78,6 +80,7 @@ func (s *streamConversion) Write(body []byte) (int, error) {
 		}
 		frame := append([]byte(nil), s.pending[:i]...)
 		s.pending = s.pending[i+delimiter:]
+		s.lastFrame = frame
 		if err := s.frame(frame); err != nil {
 			s.err = err
 			return 0, err
@@ -103,6 +106,7 @@ func (s *streamConversion) emit(event string, value any) error {
 	if _, err := s.destination.Write([]byte(frame)); err != nil {
 		return err
 	}
+	s.emitted++
 	s.Flush()
 	return nil
 }
