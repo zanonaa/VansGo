@@ -55,3 +55,53 @@ func TestUnsupportedBlocksFailInsteadOfDisappearing(t *testing.T) {
 		t.Fatal("silently discarded unsupported block")
 	}
 }
+func TestTargetConversionGeminiResolvesToolResultByName(t *testing.T) {
+	body := map[string]any{"stream": true, "messages": []any{
+		map[string]any{"role": "user", "content": "read the file"},
+		map[string]any{"role": "assistant", "content": nil, "tool_calls": []any{map[string]any{"id": "call_42", "type": "function", "function": map[string]any{"name": "read_file", "arguments": "{\"path\":\"main.go\"}"}}}},
+		map[string]any{"role": "tool", "tool_call_id": "call_42", "content": "{\"line_count\":3}"},
+	}}
+	out, err := translateTarget(body, "gemini", "native-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, _ := out["contents"].([]any)
+	if len(contents) != 3 {
+		t.Fatalf("expected 3 turns, got %d: %v", len(contents), out["contents"])
+	}
+	response, _ := contents[2].(map[string]any)
+	if response["role"] != "user" {
+		t.Fatalf("tool result turn must be role user, got %v", response["role"])
+	}
+	parts, _ := response["parts"].([]any)
+	part, _ := parts[0].(map[string]any)
+	function, _ := part["functionResponse"].(map[string]any)
+	if function["name"] != "read_file" || function["id"] != "call_42" {
+		t.Fatalf("functionResponse not resolved: %v", function)
+	}
+	responseData, _ := function["response"].(map[string]any)
+	if responseData["result"] == nil {
+		t.Fatalf("functionResponse.response.result missing: %v", function)
+	}
+	encoded, _ := json.Marshal(out)
+	if strings.Contains(string(encoded), `"role":"tool"`) {
+		t.Fatalf("raw tool role leaked into gemini contents: %s", encoded)
+	}
+	// Sem o assistant declarando o tool_call, o id não resolve e falha explícito.
+	_, err = translateTarget(map[string]any{"messages": []any{map[string]any{"role": "tool", "tool_call_id": "call_missing", "content": "orphan"}}}, "gemini", "model")
+	if err == nil || !strings.Contains(err.Error(), "call_missing") {
+		t.Fatalf("expected explicit unresolved-id error, got %v", err)
+	}
+	// Texto de resultado que não é JSON segue como string em result.
+	out, err = translateTarget(map[string]any{"messages": []any{
+		map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": "call_7", "type": "function", "function": map[string]any{"name": "lookup", "arguments": "{}"}}}},
+		map[string]any{"role": "tool", "tool_call_id": "call_7", "content": "plain text result"},
+	}}, "gemini", "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ = json.Marshal(out)
+	if !strings.Contains(string(encoded), `"result":"plain text result"`) {
+		t.Fatalf("non-JSON tool result lost: %s", encoded)
+	}
+}

@@ -39,6 +39,11 @@ func translateTarget(body map[string]any, format, model string) (map[string]any,
 	}
 	turns := []any{}
 	system := []any{}
+	// Gemini não tem role "tool": o resultado precisa virar functionResponse e,
+	// para isso, o nome da função é resolvido pelo tool_call_id nos tool_calls
+	// declarados pelos assistants anteriores (formato OpenAI não carrega nome
+	// na mensagem de resultado).
+	toolNames := map[string]string{}
 	for _, raw := range messages {
 		message, ok := raw.(map[string]any)
 		if !ok {
@@ -54,8 +59,23 @@ func translateTarget(body map[string]any, format, model string) (map[string]any,
 			continue
 		}
 		if role == "tool" {
+			toolCallID := ttsString(message["tool_call_id"])
 			if format == "gemini" {
-				return nil, fmt.Errorf("Gemini tool result requires resolved function name")
+				name := toolNames[toolCallID]
+				if name == "" {
+					return nil, fmt.Errorf("Gemini tool result %q has no matching tool_calls entry", toolCallID)
+				}
+				var payload any = map[string]any{"result": ""}
+				if text, ok := message["content"].(string); ok && text != "" {
+					var decoded any
+					if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+						payload = map[string]any{"result": decoded}
+					} else {
+						payload = map[string]any{"result": text}
+					}
+				}
+				turns = append(turns, map[string]any{"role": "user", "parts": []any{map[string]any{"functionResponse": map[string]any{"id": toolCallID, "name": name, "response": payload}}}})
+				continue
 			}
 			blocks = []any{map[string]any{"type": "tool_result", "tool_use_id": message["tool_call_id"], "content": message["content"]}}
 			role = "user"
@@ -74,6 +94,11 @@ func translateTarget(body map[string]any, format, model string) (map[string]any,
 					blocks = append(blocks, map[string]any{"type": "tool_use", "id": call["id"], "name": function["name"], "input": arguments})
 				} else {
 					blocks = append(blocks, map[string]any{"functionCall": map[string]any{"name": function["name"], "args": arguments}})
+					if id := ttsString(call["id"]); id != "" {
+						if name := ttsString(function["name"]); name != "" {
+							toolNames[id] = name
+						}
+					}
 				}
 			}
 		}
