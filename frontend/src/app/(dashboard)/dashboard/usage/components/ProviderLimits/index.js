@@ -722,7 +722,7 @@ export default function ProviderLimits() {
         conn.id,
         splitAntigravityFamilyQuotas(quotaData[conn.id]?.quotas),
       );
-    );
+    });
     return splits;
   }, [connections, quotaData]);
 
