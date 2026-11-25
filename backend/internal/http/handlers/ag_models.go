@@ -75,7 +75,9 @@ func agAvailableModels(ctx context.Context, connection map[string]any, client *h
 	if token == "" {
 		return agModelsEntry{}, fmt.Errorf("antigravity: no access token")
 	}
-	payload, err := agFetchAvailableModels(ctx, token, client)
+	metadata, _ := connection["providerSpecificData"].(map[string]any)
+	project := firstNonEmptyString(metadata["projectId"], metadata["quota_project_id"], connection["projectId"])
+	payload, err := agFetchAvailableModels(ctx, token, project, client)
 	if err != nil {
 		return agModelsEntry{}, err
 	}
@@ -90,11 +92,23 @@ func agAvailableModels(ctx context.Context, connection map[string]any, client *h
 	return entry, nil
 }
 
-func agFetchAvailableModels(ctx context.Context, token string, client *http.Client) (map[string]any, error) {
+func agFetchAvailableModels(ctx context.Context, token, project string, client *http.Client) (map[string]any, error) {
 	if client == nil {
 		client = agModelsClient
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, agModelsURL, strings.NewReader("{}"))
+	// O gate do discovery são dois fatores (validado contra produção,
+	// 2026-11-25): User-Agent do CLI + project no corpo. Mesma conta/token:
+	// {"project":"aicode-consumers"} devolve 37 models (família gemini-4
+	// inteira); `{}` devolve 21, sem gemini-4.
+	body := map[string]any{}
+	if project != "" {
+		body["project"] = project
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, agModelsURL, strings.NewReader(string(encoded)))
 	if err != nil {
 		return nil, err
 	}
@@ -133,8 +147,16 @@ func agParseAvailableModels(payload map[string]any) agModelsEntry {
 	}
 	// tieredModelIds: mapa categoria → lista (flash/flashLite/pro...). Cada
 	// família tiered vira três ids -low/-medium/-high; o upstream aceita o id
-	// base no wrapper (strip -tiered(...) → -tiered).
-	bases := agTieredBases(payload, models, excluded)
+	// base no wrapper (strip -tiered(...) → -tiered). Bases que JÁ terminam
+	// num nível (gemini-4-hydrogen-tiered-high/-xhigh do catálogo atual) não
+	// podem ganhar fanout: o id base sem nível não existe no upstream (404) —
+	// o id completo passa verbatim pelo caminho normal do listing.
+	bases := []string{}
+	for _, base := range agTieredBases(payload, models, excluded) {
+		if agTierLevel(base) == "" {
+			bases = append(bases, base)
+		}
+	}
 	fanout := map[string][]string{}
 	levels := []string{"low", "medium", "high"}
 	for _, base := range bases {
@@ -259,9 +281,10 @@ func agDisplayName(public string, meta map[string]any) string {
 	return name
 }
 
-// agTierLevel devolve "low"/"medium"/"high" quando o id termina num nível.
+// agTierLevel devolve o nível terminal do id ("low"/"medium"/"high"/"xhigh").
+// xhigh existe na família gemini-4 (neon/carbon/argon/hydrogen) e no tiered.
 func agTierLevel(public string) string {
-	for _, level := range []string{"low", "medium", "high"} {
+	for _, level := range []string{"low", "medium", "high", "xhigh"} {
 		if strings.HasSuffix(public, "-"+level) {
 			return level
 		}

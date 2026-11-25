@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-var antigravityModels = map[string]bool{"gemini-3.8-flash-high": true, "gemini-3.8-flash-medium": true, "gemini-3.8-flash-low": true, "gemini-3.7-flash-high": true, "gemini-3.7-flash-medium": true, "gemini-3.7-flash-low": true, "gemini-3-flash-agent": true, "gemini-3.5-flash-low": true, "gemini-3.5-flash-extra-low": true, "gemini-pro-agent": true, "gemini-3.1-pro-low": true, "claude-sonnet-4-6": true, "claude-opus-4-6-thinking": true, "gpt-oss-120b-medium": true, "gemini-3-flash": true, "gemini-3.1-flash-image": true, "gemini-3-pro-image": true}
 var antigravityIneligible = regexp.MustCompile(`(?i)VALIDATION_REQUIRED|not eligible for Gemini Code Assist`)
 
 type weeklyUsageEntry struct {
@@ -108,21 +107,37 @@ func (u *UsageContracts) geminiUsage(r *http.Request, token string, connection m
 	return map[string]any{"plan": plan, "quotas": quotas}
 }
 
-func (u *UsageContracts) antigravityUsage(r *http.Request, token string) map[string]any {
-	headers := map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json", "User-Agent": "antigravity/ide/2.1.1 darwin/arm64"}
+// antigravityUsage replica o cálculo de quota do OmniRoute (open-sse/services/
+// usage/antigravity.ts + antigravityWeeklyQuota.ts) com três fontes paralelas:
+//
+//  1. fetchAvailableModels — catálogo + quotaInfo por model (pode ficar stale:
+//     o bucket continua cheio depois do consumo real);
+//  2. retrieveUserQuota — consumo per-model, fonte da verdade pra família
+//     Gemini; fallback pra models que só existem lá (Claude/GPT);
+//  3. retrieveUserQuotaSummary — janelas por família (5h + weekly).
+//
+// Prioridade: retrieveUserQuota > quotaInfo. Normalização do OmniRoute: base
+// 1000; "unlimited" só quando fraction ≥ 1 sem resetTime; fraction ausente é
+// desconhecido (fail-open — o model sai do painel em vez de exibir 0%).
+//
+// O gate dos endpoints é o mesmo do discovery/chat (ag_headers.go): User-Agent
+// do CLI + project no corpo. O project vem da conexão (igual ao translator);
+// sem conexão, cai pro loadCodeAssist.
+func (u *UsageContracts) antigravityUsage(r *http.Request, token string, connection map[string]any) map[string]any {
+	metadata, _ := connection["providerSpecificData"].(map[string]any)
+	project := firstNonEmptyString(metadata["projectId"], metadata["quota_project_id"], connection["projectId"])
+	headers := map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json", "User-Agent": agUserAgent}
+	// loadCodeAssist resolve o project (contas antigas sem projectId na
+	// conexão) e traz plano + subscriptionInfo pro painel.
 	_, subscription, _, _ := u.googleJSON(r.Context(), "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", headers, map[string]any{"metadata": map[string]any{"ideType": 9, "platform": googlePlatform(), "pluginType": 2}, "mode": 1})
-	project := cloudProject(subscription["cloudaicompanionProject"])
+	if project == "" {
+		project = cloudProject(subscription["cloudaicompanionProject"])
+	}
 	payload := map[string]any{}
 	if project != "" {
 		payload["project"] = project
 	}
-	modelHeaders := map[string]string{}
-	for key, value := range headers {
-		modelHeaders[key] = value
-	}
-	modelHeaders["X-Client-Name"] = "antigravity"
-	modelHeaders["X-Client-Version"] = "2.1.1"
-	status, data, raw, err := u.googleJSON(r.Context(), "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels", modelHeaders, payload)
+	status, data, raw, err := u.googleJSON(r.Context(), agModelsURL, headers, payload)
 	if err != nil {
 		return map[string]any{"message": "Antigravity error: " + err.Error()}
 	}
@@ -140,25 +155,83 @@ func (u *UsageContracts) antigravityUsage(r *http.Request, token string) map[str
 	if status < 200 || status >= 300 {
 		return map[string]any{"message": fmt.Sprintf("Antigravity error: Antigravity API error: %d", status)}
 	}
-	paid, _ := subscription["paidTier"].(map[string]any)
-	tier := ttsString(paid["id"])
 	quotas := map[string]any{}
-	if tier != "" && tier != "free-tier" {
-		models, _ := data["models"].(map[string]any)
-		for model, raw := range models {
-			info, _ := raw.(map[string]any)
-			quota, ok := info["quotaInfo"].(map[string]any)
-			if !ok || info["isInternal"] == true || !antigravityModels[model] {
-				continue
-			}
-			quotas[model] = fractionQuota(model, usageNumber(quota["remainingFraction"]), quota["resetTime"], info["displayName"])
+	models, _ := data["models"].(map[string]any)
+	// Fonte 1: quotaInfo do catálogo. Allowlist agora é dinâmica — fail-open
+	// do OmniRoute: todo model público com quotaInfo entra (a lista estática
+	// antiga não tinha nenhum gemini-4 e o gating real de catálogo acontece
+	// no próprio upstream via UA/project). remainingFraction ausente é
+	// "desconhecido": o model sai do painel em vez de exibir 0%.
+	for model, rawModel := range models {
+		info, _ := rawModel.(map[string]any)
+		quota, ok := info["quotaInfo"].(map[string]any)
+		if !ok || info["isInternal"] == true {
+			continue
 		}
+		fraction, ok := quota["remainingFraction"].(float64)
+		if !ok {
+			continue
+		}
+		quotas[model] = agFractionEntry(fraction, quota["resetTime"], info["displayName"])
 	}
-	for key, value := range u.antigravityWeekly(r.Context(), token, project, modelHeaders, payload) {
+	// Fonte 2: retrieveUserQuota per-model — fonte da verdade do consumo
+	// Gemini; sobrescreve quotaInfo stale e inclui buckets fora do catálogo.
+	for model, entry := range u.antigravityPerModelQuota(r.Context(), token, project) {
+		quotas[model] = entry
+	}
+	// Fonte 3: summary por família (Gemini / Claude&GPT / Argon, janelas 5h+weekly).
+	for key, value := range u.antigravityWeekly(r.Context(), token, project, headers, payload) {
 		quotas[key] = value
 	}
 	current, _ := subscription["currentTier"].(map[string]any)
 	return map[string]any{"plan": firstNonEmpty(current["name"], "Unknown"), "quotas": quotas, "subscriptionInfo": subscription}
+}
+
+// agFractionEntry normaliza um fraction (0..1) pro formato do painel — base
+// 1000 (reuso da regra do fractionQuota) com a semântica do OmniRoute:
+// unlimited só quando fraction ≥ 1 SEM resetTime (ex. buckets tab_*); fraction
+// reportado ≥ 1 com reset é janela cheia, não ausência de limite.
+func agFractionEntry(fraction float64, reset any, display any) map[string]any {
+	if fraction < 0 {
+		fraction = 0
+	} else if fraction > 1 {
+		fraction = 1
+	}
+	entry := fractionQuota("", fraction, reset, display)
+	if fraction >= 1 && reset == nil {
+		entry["unlimited"] = true
+		entry["used"] = 0.0
+		entry["total"] = 0.0
+		entry["remainingPercentage"] = 100.0
+	}
+	return entry
+}
+
+// antigravityPerModelQuota consome v1internal:retrieveUserQuota (buckets
+// per-model: modelId/remainingFraction/resetTime). Falha silenciosa: sem a
+// RPC, o painel cai pro quotaInfo do catálogo — igual ao fallback do OmniRoute.
+func (u *UsageContracts) antigravityPerModelQuota(ctx context.Context, token, project string) map[string]any {
+	payload := map[string]any{}
+	if project != "" {
+		payload["project"] = project
+	}
+	status, data, _, err := u.googleJSON(ctx, "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota", map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json", "User-Agent": agUserAgent}, payload)
+	if err != nil || status < 200 || status >= 300 {
+		return map[string]any{}
+	}
+	quotas := map[string]any{}
+	buckets, _ := data["buckets"].([]any)
+	for _, raw := range buckets {
+		bucket, _ := raw.(map[string]any)
+		model := ttsString(bucket["modelId"])
+		if model == "" || strings.HasPrefix(model, "tab_") {
+			continue
+		}
+		if fraction, ok := bucket["remainingFraction"].(float64); ok {
+			quotas[model] = agFractionEntry(fraction, bucket["resetTime"], nil)
+		}
+	}
+	return quotas
 }
 
 func (u *UsageContracts) antigravityWeekly(ctx context.Context, token, project string, headers map[string]string, payload map[string]any) map[string]any {
@@ -204,6 +277,14 @@ func (u *UsageContracts) antigravityWeekly(ctx context.Context, token, project s
 	return cloneUsageMap(result)
 }
 
+// parseWeeklyQuota converte retrieveUserQuotaSummary (quotas por FAMÍLIA,
+// não por model) pro formato do painel. Porte do parser do OmniRoute
+// (antigravityWeeklyQuota.ts): grupos Gemini / Claude&GPT / Gemini 4 Argon
+// (Argon detectado pelo texto do grupo OU pelo bucketId — só aparece em
+// Ultra), janelas independentes weekly e 5h, e fraction podendo vir aninhado
+// em bucket.remaining.remainingFraction (defensivo: uma mudança silenciosa do
+// envelope upstream não pode apagar as famílias do painel). Cada família
+// expõe até duas janelas, chaveadas <family>_<window>.
 func parseWeeklyQuota(data map[string]any) map[string]any {
 	groups, _ := data["groups"].([]any)
 	if groups == nil {
@@ -211,34 +292,97 @@ func parseWeeklyQuota(data map[string]any) map[string]any {
 		groups, _ = summary["groups"].([]any)
 	}
 	result := map[string]any{}
+	argonGroup := regexp.MustCompile(`(?i)\bargon\b|\bgemini[\s_-]*4\b`)
+	argonBucket := regexp.MustCompile(`(?i)\bargon\b|gemini-argon-wtu-weekly`)
+	weeklyPattern := regexp.MustCompile(`(?i)\bweekly\b|\b7d\b|seven[-\s]?day`)
+	sessionPattern := regexp.MustCompile(`(?i)\b5h\b|five[-\s]?hour|session`)
 	for _, raw := range groups {
 		group, _ := raw.(map[string]any)
 		name := ttsString(group["displayName"])
-		family, label := "", ""
-		switch {
-		case regexp.MustCompile(`(?i)gemini`).MatchString(name):
-			family, label = "gemini_weekly", "Gemini (Weekly)"
-		case regexp.MustCompile(`(?i)claude|gpt`).MatchString(name):
-			family, label = "claude_gpt_weekly", "Claude & GPT (Weekly)"
-		default:
-			continue
-		}
-		if result[family] != nil {
-			continue
-		}
+		text := strings.ToLower(ttsString(group["id"]) + " " + name)
 		buckets, _ := group["buckets"].([]any)
-		for _, rawBucket := range buckets {
-			bucket, _ := rawBucket.(map[string]any)
-			text := strings.ToLower(ttsString(bucket["bucketId"]) + " " + ttsString(bucket["displayName"]))
-			fraction, ok := bucket["remainingFraction"].(float64)
-			if bucket["disabled"] == true || !strings.Contains(text, "weekly") || !ok {
+		family := ""
+		switch {
+		case argonGroup.MatchString(text):
+			family = "gemini_4_argon"
+		case strings.Contains(strings.ToLower(name), "gemini"):
+			family = "gemini"
+		case regexp.MustCompile(`(?i)claude|gpt`).MatchString(name):
+			family = "claude_gpt"
+		default:
+			// Sem match no texto do grupo: Argon pode aparecer só nos
+			// bucketIds (Gemini 4 Argon em contas Ultra).
+			for _, rawBucket := range buckets {
+				bucket, _ := rawBucket.(map[string]any)
+				if argonBucket.MatchString(strings.ToLower(ttsString(bucket["bucketId"]) + " " + ttsString(bucket["displayName"]))) {
+					family = "gemini_4_argon"
+					break
+				}
+			}
+			if family == "" {
 				continue
 			}
-			result[family] = fractionQuota(family, fraction, bucket["resetTime"], label)
-			break
+		}
+		for _, rawBucket := range buckets {
+			bucket, _ := rawBucket.(map[string]any)
+			if bucket["disabled"] == true {
+				continue
+			}
+			// fraction direto (envelope atual) ou aninhado em bucket.remaining.
+			remaining, _ := bucket["remaining"].(map[string]any)
+			fraction, ok := bucket["remainingFraction"].(float64)
+			if !ok {
+				fraction, ok = remaining["remainingFraction"].(float64)
+			}
+			if !ok {
+				continue
+			}
+			// Janela: campo window explícito; fallback textual no bucketId/
+			// displayName (formatos antigos).
+			windowText := strings.ToLower(ttsString(bucket["window"]) + " " + ttsString(bucket["bucketId"]) + " " + ttsString(bucket["displayName"]))
+			window := ""
+			switch {
+			case weeklyPattern.MatchString(windowText):
+				window = "weekly"
+			case sessionPattern.MatchString(windowText):
+				window = "session"
+			}
+			if window == "" {
+				continue
+			}
+			key := family + "_" + window
+			if result[key] != nil {
+				continue
+			}
+			reset := bucket["resetTime"]
+			if reset == nil {
+				reset = remaining["resetTime"]
+			}
+			label := map[string]string{
+				"gemini":         "Gemini",
+				"gemini_4_argon": "Gemini 4 Argon",
+				"claude_gpt":     "Claude & GPT",
+			}[family] + agWindowLabel(window)
+			// unlimited (OmniRoute): fraction ≥ 1 SEM resetTime — fraction 1
+			// com reset é só janela não consumida, não ausência de limite.
+			entry := fractionQuota(key, fraction, reset, label)
+			if fraction >= 1 && reset == nil {
+				entry["unlimited"] = true
+				entry["used"] = 0.0
+				entry["total"] = 0.0
+			}
+			result[key] = entry
 		}
 	}
 	return result
+}
+
+// agWindowLabel converte a janela crua ("weekly"/"session") pro rótulo do painel.
+func agWindowLabel(window string) string {
+	if window == "session" {
+		return " (5h)"
+	}
+	return " (Weekly)"
 }
 
 func cloneUsageMap(value map[string]any) map[string]any {

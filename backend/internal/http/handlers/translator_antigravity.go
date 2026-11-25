@@ -24,13 +24,21 @@ import (
 // concorrentes e backfill de thoughtSignature no primeiro functionCall
 // (Gemini 3+ rejeita functionCall sem assinatura).
 const (
-	// Identidade do cliente: espelha o User-Agent do IDE standalone
-	// (product.json ideVersion; construção em out/main.js userAgent():
-	// `${"antigravity"|"jetski"}/${ideVersion} ${platform}/${arch}`, sem o
-	// segmento `ide/` antigo). Allowlist do upstream é dinâmica/temporal —
-	// validar contra o streamGenerateContent antes de qualquer bump.
-	agUserAgent       = "antigravity/2.8.0 linux/amd64"
+	// Identidade do cliente: User-Agent do CLI agy (agCliUserAgent, formato em
+	// ag_headers.go). Allowlist do upstream é dinâmica/temporal: o UA do IDE
+	// (antigravity/2.8.0 linux/amd64) ainda passa no chat, mas corta o
+	// catálogo do fetchAvailableModels pra ~21 models (sem a família gemini-4).
+	// O UA CLI libera os 37 (neon/carbon/argon/hydrogen com xhigh,
+	// claude-5-5) — validado contra produção em 2026-11-25; revalidar contra
+	// o streamGenerateContent antes de qualquer bump de versão.
 	agMaxOutputTokens = 16384.0
+)
+
+// agUserAgent não pode ser const (agCliUserAgent é função, monta os_type/arch
+// de runtime.GOOS/GOARCH); semântica de const via var de nível de pacote.
+var agUserAgent = agCliUserAgent()
+
+var (
 	// COMPETITIVE_CLAUDE_AGENT_PROMPT: prompts de clientes concorrentes fazem o
 	// upstream marcar o request com 429 Quota Exhausted mesmo com quota.
 	agClaudeAgentPrompt = "You are a Claude agent, built on Anthropic's Claude Agent SDK."

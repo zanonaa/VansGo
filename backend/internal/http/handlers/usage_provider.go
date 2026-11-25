@@ -112,7 +112,7 @@ func (u *UsageContracts) providerUsage(w http.ResponseWriter, r *http.Request, c
 	case "gemini-cli":
 		nodeReply(w, 200, u.geminiUsage(r, ttsString(connection["accessToken"]), connection))
 	case "antigravity":
-		nodeReply(w, 200, u.antigravityUsage(r, ttsString(connection["accessToken"])))
+		nodeReply(w, 200, u.antigravityUsage(r, ttsString(connection["accessToken"]), connection))
 	case "opencode-zen", "opencode-go":
 		nodeReply(w, 200, u.openCodeUsage(r, provider, token))
 	case "github":
