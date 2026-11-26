@@ -91,6 +91,84 @@ func TestAntigravityUsageThreeSourcesSingleflight(t *testing.T) {
 	}
 }
 
+// O painel de quota não pode ficar preso em "authentication expired" quando o
+// token morre entre dois refreshes proativos: em 401, renova com o refresh
+// token, persiste e re-tenta uma vez (mesma mecânica do gateway e do grok).
+func TestAntigravityUsageRefreshesExpiredToken(t *testing.T) {
+	modelsCalls := 0
+	u := &UsageContracts{Connections: &usageRefreshStore{connection: map[string]any{"id": "conn"}}, Client: &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "oauth2.googleapis.com" {
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if r.Form.Get("grant_type") != "refresh_token" || r.Form.Get("refresh_token") != "stale" || r.Form.Get("client_id") == "" {
+				t.Fatalf("form de refresh inesperado: %v", r.Form)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"access_token":"fresh","expires_in":3600}`))}, nil
+		}
+		if strings.Contains(r.URL.Path, "fetchAvailableModels") {
+			modelsCalls++
+			if r.Header.Get("Authorization") == "Bearer stale" {
+				return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{"error":"Unauthorized"}`))}, nil
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"models":{"gemini-3-flash":{"displayName":"Gemini 3 Flash","quotaInfo":{"remainingFraction":0.5}}}}`))}, nil
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})}}
+	store := u.Connections.(*usageRefreshStore)
+	store.connection["accessToken"] = "stale"
+	store.connection["refreshToken"] = "stale"
+	store.connection["providerSpecificData"] = map[string]any{"projectId": "proj-1"}
+
+	result := u.antigravityUsage(httptest.NewRequest("GET", "/", nil), "stale", store.connection)
+	if message := ttsString(result["message"]); strings.Contains(message, "authentication expired") {
+		t.Fatalf("não renovou: %s", message)
+	}
+	if store.updated["accessToken"] != "fresh" || store.updated["expiresIn"] == nil {
+		t.Fatalf("patch não persistido: %v", store.updated)
+	}
+	if quotas, _ := result["quotas"].(map[string]any); quotas["gemini-3-flash"] == nil {
+		t.Fatalf("quotas perdidas após o refresh: %v", result)
+	}
+	if modelsCalls != 2 {
+		t.Fatalf("fetchAvailableModels chamado %d vezes", modelsCalls)
+	}
+}
+
+// Refresh que falha (ou ausente) preserva o comportamento atual: mensagem de
+// expirado, sem quotas — o painel continua honesto sobre o estado.
+func TestAntigravityUsageExpiredWithoutRefreshKeepsMessage(t *testing.T) {
+	modelsCalls := 0
+	u := &UsageContracts{Connections: &usageRefreshStore{connection: map[string]any{"id": "conn"}}, Client: &http.Client{Transport: kiroImportTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "oauth2.googleapis.com" {
+			return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader(`{"error":"invalid_grant"}`))}, nil
+		}
+		if strings.Contains(r.URL.Path, "fetchAvailableModels") {
+			modelsCalls++
+			return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{"error":"Unauthorized"}`))}, nil
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})}}
+	store := u.Connections.(*usageRefreshStore)
+	store.connection["accessToken"] = "stale"
+	store.connection["refreshToken"] = "stale"
+	store.connection["providerSpecificData"] = map[string]any{"projectId": "proj-1"}
+
+	result := u.antigravityUsage(httptest.NewRequest("GET", "/", nil), "stale", store.connection)
+	if message := ttsString(result["message"]); !strings.Contains(message, "authentication expired") {
+		t.Fatalf("mensagem de expirado perdida: %v", result)
+	}
+	if result["authExpired"] != true {
+		t.Fatalf("authExpired ausente: %v", result)
+	}
+	if store.updated != nil {
+		t.Fatalf("patch persistido com refresh falho: %v", store.updated)
+	}
+	if modelsCalls != 1 {
+		t.Fatalf("fetchAvailableModels chamado %d vezes (refresh falho não deve re-tentar)", modelsCalls)
+	}
+}
+
 func TestParseWeeklyQuotaArgonAndUnlimited(t *testing.T) {
 	data := func(raw string) map[string]any {
 		var parsed map[string]any
