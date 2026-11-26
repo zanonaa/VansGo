@@ -66,7 +66,20 @@ func (u *UsageContracts) googleJSON(ctx context.Context, target string, headers 
 	return status, data, raw, err
 }
 
+// geminiUsage renova o access token em 401 antes de reportar expirado (mesma
+// mecânica do antigravityUsage — um único re-tento, sem loop).
 func (u *UsageContracts) geminiUsage(r *http.Request, token string, connection map[string]any) map[string]any {
+	result := u.geminiUsageResult(r, token, connection)
+	if result["authExpired"] != true {
+		return result
+	}
+	if refreshed := u.refreshUsageToken(r, "gemini-cli", connection); refreshed != "" {
+		return u.geminiUsageResult(r, refreshed, connection)
+	}
+	return result
+}
+
+func (u *UsageContracts) geminiUsageResult(r *http.Request, token string, connection map[string]any) map[string]any {
 	if token == "" {
 		return map[string]any{"plan": "Free", "message": "Gemini CLI access token not available."}
 	}
@@ -90,6 +103,9 @@ func (u *UsageContracts) geminiUsage(r *http.Request, token string, connection m
 	if err != nil {
 		return map[string]any{"message": "Gemini CLI error: " + err.Error()}
 	}
+	if status == 401 {
+		return map[string]any{"plan": plan, "message": fmt.Sprintf("Gemini CLI quota error (%d).", status), "authExpired": true}
+	}
 	if status < 200 || status >= 300 {
 		return map[string]any{"plan": plan, "message": fmt.Sprintf("Gemini CLI quota error (%d).", status)}
 	}
@@ -105,6 +121,24 @@ func (u *UsageContracts) geminiUsage(r *http.Request, token string, connection m
 		quotas[model] = fractionQuota(model, fraction, bucket["resetTime"], nil)
 	}
 	return map[string]any{"plan": plan, "quotas": quotas}
+}
+
+// refreshUsageToken renova o access token OAuth da conexão (mesma mecânica do
+// envio do gateway) e persiste o patch. Devolve o token novo, ou vazio quando
+// o provider não suporta refresh ou o refresh falhou. lookup nil: a tela de
+// quota não marca fitness de pool (mesmo comportamento do grokUsage).
+func (u *UsageContracts) refreshUsageToken(r *http.Request, provider string, connection map[string]any) string {
+	if u.Connections == nil {
+		return ""
+	}
+	patch, err := oauthRefreshPatch(r.Context(), u.Client, provider, connection, nil)
+	if err != nil || patch == nil {
+		return ""
+	}
+	if _, err := u.Connections.Update(r.Context(), ttsString(connection["id"]), patch); err != nil {
+		return ""
+	}
+	return ttsString(patch["accessToken"])
 }
 
 // antigravityUsage replica o cálculo de quota do OmniRoute (open-sse/services/
@@ -123,7 +157,23 @@ func (u *UsageContracts) geminiUsage(r *http.Request, token string, connection m
 // O gate dos endpoints é o mesmo do discovery/chat (ag_headers.go): User-Agent
 // do CLI + project no corpo. O project vem da conexão (igual ao translator);
 // sem conexão, cai pro loadCodeAssist.
+//
+// Em 401 renova o access token e re-tenta uma vez (mesma mecânica do envio do
+// gateway e do grokUsage): o scheduler proativo cobre o token de hora em hora,
+// mas uma janela de falha transitória deixava a tela de quota presa em
+// "authentication expired" até o próximo chat renovar reativamente.
 func (u *UsageContracts) antigravityUsage(r *http.Request, token string, connection map[string]any) map[string]any {
+	result := u.antigravityUsageResult(r, token, connection)
+	if result["authExpired"] != true {
+		return result
+	}
+	if refreshed := u.refreshUsageToken(r, "antigravity", connection); refreshed != "" {
+		return u.antigravityUsageResult(r, refreshed, connection)
+	}
+	return result
+}
+
+func (u *UsageContracts) antigravityUsageResult(r *http.Request, token string, connection map[string]any) map[string]any {
 	metadata, _ := connection["providerSpecificData"].(map[string]any)
 	project := firstNonEmptyString(metadata["projectId"], metadata["quota_project_id"], connection["projectId"])
 	headers := map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json", "User-Agent": agUserAgent}
@@ -150,7 +200,7 @@ func (u *UsageContracts) antigravityUsage(r *http.Request, token string, connect
 		return map[string]any{"message": message, "quotas": map[string]any{}, "ineligible": ineligible}
 	}
 	if status == 401 {
-		return map[string]any{"message": "Antigravity quota API authentication expired. Chat may still work.", "quotas": map[string]any{}}
+		return map[string]any{"message": "Antigravity quota API authentication expired. Chat may still work.", "quotas": map[string]any{}, "authExpired": true}
 	}
 	if status < 200 || status >= 300 {
 		return map[string]any{"message": fmt.Sprintf("Antigravity error: Antigravity API error: %d", status)}
