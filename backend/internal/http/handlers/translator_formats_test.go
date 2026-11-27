@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -137,6 +138,101 @@ func (b *agBrokenStream) Read(p []byte) (int, error) {
 		return n, nil
 	}
 	return 0, errors.New("read: connection reset by peer")
+}
+
+func TestSendAntigravityRetriesOnceOnTransportErrorBeforeHeaders(t *testing.T) {
+	attempts := 0
+	fetched := 0
+	sender := &TranslatorSend{
+		Connections: sendConnections{items: []map[string]any{{
+			"isActive":             true,
+			"accessToken":          "oauth-token",
+			"email":                "user@example.com",
+			"providerSpecificData": map[string]any{"projectId": "proj-1"},
+		}}},
+		Client: &http.Client{Transport: agModelsTransport(t, func(r *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, errors.New("EOF")
+			}
+			return &http.Response{
+				StatusCode: 200,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1}}\n\n")),
+			}, nil
+		}, &fetched)},
+	}
+	w := httptest.NewRecorder()
+	sender.SendAntigravity(w, httptest.NewRequest("POST", "/v1/chat/completions", nil), "antigravity", "gemini-3-flash", map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+		"stream":   true,
+	}, "openai", true)
+	if attempts != 2 {
+		t.Fatalf("esperava retry único (2 tentativas), tive %d", attempts)
+	}
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"content":"ok"`) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSendAntigravityStopsAfterSingleTransportRetry(t *testing.T) {
+	attempts := 0
+	fetched := 0
+	sender := &TranslatorSend{
+		Connections: sendConnections{items: []map[string]any{{
+			"isActive":             true,
+			"accessToken":          "oauth-token",
+			"email":                "user@example.com",
+			"providerSpecificData": map[string]any{"projectId": "proj-1"},
+		}}},
+		Client: &http.Client{Transport: agModelsTransport(t, func(r *http.Request) (*http.Response, error) {
+			attempts++
+			return nil, errors.New("read: connection reset by peer")
+		}, &fetched)},
+	}
+	w := httptest.NewRecorder()
+	sender.SendAntigravity(w, httptest.NewRequest("POST", "/v1/chat/completions", nil), "antigravity", "gemini-3-flash", map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+		"stream":   true,
+	}, "openai", true)
+	if attempts != 2 {
+		t.Fatalf("esperava no máximo 2 tentativas (1 retry), tive %d", attempts)
+	}
+	if w.Code != 500 || !strings.Contains(w.Body.String(), "connection reset by peer") {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSendAntigravityDoesNotRetryWhenClientCanceled(t *testing.T) {
+	attempts := 0
+	fetched := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	sender := &TranslatorSend{
+		Connections: sendConnections{items: []map[string]any{{
+			"isActive":             true,
+			"accessToken":          "oauth-token",
+			"email":                "user@example.com",
+			"providerSpecificData": map[string]any{"projectId": "proj-1"},
+		}}},
+		Client: &http.Client{Transport: agModelsTransport(t, func(r *http.Request) (*http.Response, error) {
+			attempts++
+			cancel()
+			return nil, context.Canceled
+		}, &fetched)},
+	}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", nil).WithContext(ctx)
+	sender.SendAntigravity(w, req, "antigravity", "gemini-3-flash", map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+		"stream":   true,
+	}, "openai", true)
+	if attempts != 1 {
+		t.Fatalf("contexto cancelado não deveria re-tentar; tentativas=%d", attempts)
+	}
+	if w.Code != 500 {
+		t.Fatalf("esperava 500, tive %d %s", w.Code, w.Body.String())
+	}
 }
 
 func TestSendAntigravityRetriesWhenUpstreamDiesBeforeFirstFrame(t *testing.T) {

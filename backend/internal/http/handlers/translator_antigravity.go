@@ -172,6 +172,7 @@ func (t *TranslatorSend) SendAntigravity(w http.ResponseWriter, r *http.Request,
 	}
 	defer cleanup()
 	refreshTried := false
+	transportRetried := false
 	streamRetried := false
 	for {
 		request, err := newRequest()
@@ -185,6 +186,18 @@ func (t *TranslatorSend) SendAntigravity(w http.ResponseWriter, r *http.Request,
 		}
 		response, err := client.Do(request)
 		if err != nil {
+			// Morte de transporte antes dos headers (ex.: EOF/reset/timeout
+			// de conexão no upstream): nada foi escrito para o cliente, então
+			// um único retry é seguro — desde que o contexto do cliente não
+			// tenha sido cancelado.
+			if !transportRetried && r.Context().Err() == nil {
+				transportRetried = true
+				slog.Warn("antigravity erro de transporte antes dos headers; repetindo requisição",
+					"erro", err.Error(),
+					"modelo", upstream,
+					"payload_bytes", len(encoded))
+				continue
+			}
 			fail(500, err.Error())
 			return
 		}
