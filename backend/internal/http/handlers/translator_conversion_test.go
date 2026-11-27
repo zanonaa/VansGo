@@ -69,6 +69,16 @@ func TestTargetConversionGeminiResolvesToolResultByName(t *testing.T) {
 	if len(contents) != 3 {
 		t.Fatalf("expected 3 turns, got %d: %v", len(contents), out["contents"])
 	}
+	modelTurn, _ := contents[1].(map[string]any)
+	modelParts, _ := modelTurn["parts"].([]any)
+	if len(modelParts) != 1 {
+		t.Fatalf("expected 1 functionCall part, got %v", modelParts)
+	}
+	modelPart, _ := modelParts[0].(map[string]any)
+	call, _ := modelPart["functionCall"].(map[string]any)
+	if call["name"] != "read_file" || call["id"] != "call_42" {
+		t.Fatalf("functionCall must preserve id for Antigravity/Claude: %v", call)
+	}
 	response, _ := contents[2].(map[string]any)
 	if response["role"] != "user" {
 		t.Fatalf("tool result turn must be role user, got %v", response["role"])
@@ -103,5 +113,51 @@ func TestTargetConversionGeminiResolvesToolResultByName(t *testing.T) {
 	encoded, _ = json.Marshal(out)
 	if !strings.Contains(string(encoded), `"result":"plain text result"`) {
 		t.Fatalf("non-JSON tool result lost: %s", encoded)
+	}
+}
+
+func TestTargetConversionDropsEmptyTextAlongsideToolCalls(t *testing.T) {
+	body := map[string]any{"stream": true, "messages": []any{
+		map[string]any{"role": "user", "content": "run pwd"},
+		map[string]any{
+			"role":    "assistant",
+			"content": "",
+			"tool_calls": []any{map[string]any{
+				"id":       "toolu_vrtx_01",
+				"type":     "function",
+				"function": map[string]any{"name": "pwd", "arguments": "{}"},
+			}},
+		},
+		map[string]any{"role": "tool", "tool_call_id": "toolu_vrtx_01", "content": "/tmp"},
+	}}
+	for _, format := range []string{"gemini", "claude"} {
+		out, err := translateTarget(body, format, "claude-opus-5-5-medium")
+		if err != nil {
+			t.Fatalf("%s: %v", format, err)
+		}
+		if format == "gemini" {
+			contents, _ := out["contents"].([]any)
+			turn, _ := contents[1].(map[string]any)
+			parts, _ := turn["parts"].([]any)
+			if len(parts) != 1 {
+				t.Fatalf("gemini: texto vazio não descartado junto a tool_calls: %v", parts)
+			}
+			part, _ := parts[0].(map[string]any)
+			call, _ := part["functionCall"].(map[string]any)
+			if call["id"] != "toolu_vrtx_01" {
+				t.Fatalf("gemini: functionCall.id ausente: %v", call)
+			}
+		} else {
+			messages, _ := out["messages"].([]any)
+			turn, _ := messages[1].(map[string]any)
+			blocks, _ := turn["content"].([]any)
+			if len(blocks) != 1 {
+				t.Fatalf("claude: texto vazio não descartado junto a tool_calls: %v", blocks)
+			}
+			block, _ := blocks[0].(map[string]any)
+			if block["type"] != "tool_use" || block["id"] != "toolu_vrtx_01" {
+				t.Fatalf("claude: tool_use inesperado: %v", block)
+			}
+		}
 	}
 }

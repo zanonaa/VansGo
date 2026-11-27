@@ -81,6 +81,9 @@ func translateTarget(body map[string]any, format, model string) (map[string]any,
 			role = "user"
 		}
 		if calls, ok := message["tool_calls"].([]any); ok {
+			if len(calls) > 0 {
+				blocks = dropEmptyTextBlocks(blocks, format)
+			}
 			for _, rawCall := range calls {
 				call, _ := rawCall.(map[string]any)
 				function, _ := call["function"].(map[string]any)
@@ -93,12 +96,17 @@ func translateTarget(body map[string]any, format, model string) (map[string]any,
 				if format == "claude" {
 					blocks = append(blocks, map[string]any{"type": "tool_use", "id": call["id"], "name": function["name"], "input": arguments})
 				} else {
-					blocks = append(blocks, map[string]any{"functionCall": map[string]any{"name": function["name"], "args": arguments}})
+					// Preserva id em functionCall (pareado com functionResponse.id):
+					// Claude via Antigravity/Vertex traduz functionCall → tool_use e
+					// exige tool_use.id; Vertex puro remove em vertexPostProcess.
+					functionCall := map[string]any{"name": function["name"], "args": arguments}
 					if id := ttsString(call["id"]); id != "" {
+						functionCall["id"] = id
 						if name := ttsString(function["name"]); name != "" {
 							toolNames[id] = name
 						}
 					}
+					blocks = append(blocks, map[string]any{"functionCall": functionCall})
 				}
 			}
 		}
@@ -245,6 +253,31 @@ func geminiToolConfig(choice any) (map[string]any, error) {
 		config["allowedFunctionNames"] = allowed
 	}
 	return map[string]any{"functionCallingConfig": config}, nil
+}
+
+// dropEmptyTextBlocks remove blocos de texto vazios quando o mesmo turn já
+// carrega tool_calls: Claude (direto ou via Antigravity/Vertex) rejeita
+// {"type":"text","text":""} antes de tool_use.
+func dropEmptyTextBlocks(blocks []any, format string) []any {
+	kept := make([]any, 0, len(blocks))
+	for _, raw := range blocks {
+		block, ok := raw.(map[string]any)
+		if !ok {
+			kept = append(kept, raw)
+			continue
+		}
+		if format == "claude" {
+			if block["type"] == "text" && ttsString(block["text"]) == "" {
+				continue
+			}
+		} else {
+			if text, ok := block["text"].(string); ok && text == "" && len(block) == 1 {
+				continue
+			}
+		}
+		kept = append(kept, raw)
+	}
+	return kept
 }
 
 func targetContent(content any, format string) ([]any, error) {
